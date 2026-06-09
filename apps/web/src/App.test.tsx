@@ -34,7 +34,7 @@ describe("App", () => {
     vi.unstubAllGlobals();
   });
 
-  it("renders the phase 5 generation empty state", async () => {
+  it("renders the localized generation empty state", async () => {
     vi.mocked(fetch).mockResolvedValueOnce(
       await jsonResponse({
         providers: []
@@ -48,10 +48,10 @@ describe("App", () => {
     render(<App />);
 
     expect(
-      await screen.findByRole("heading", { name: /image2 generation workbench/i })
+      await screen.findByRole("heading", { name: /image2 生图工作台/i })
     ).toBeInTheDocument();
-    expect(screen.getByText(/add an api provider/i)).toBeInTheDocument();
-    expect(screen.getByText(/successful generations will be saved/i)).toBeInTheDocument();
+    expect(screen.getByText(/先添加一个 API 接口源/)).toBeInTheDocument();
+    expect(screen.getByText(/成功生成的记录会保存在这里/)).toBeInTheDocument();
   });
 
   it("saves a provider without rendering the API key", async () => {
@@ -77,22 +77,48 @@ describe("App", () => {
 
     render(<App />);
 
-    fireEvent.change(await screen.findByLabelText(/provider name/i), {
+    fireEvent.change(await screen.findByLabelText(/接口源名称/), {
       target: { value: "Local Provider" }
     });
-    fireEvent.change(screen.getByLabelText(/api base url/i), {
+    fireEvent.change(screen.getByLabelText(/接口地址/), {
       target: { value: "https://api.example.com/v1" }
     });
-    fireEvent.change(screen.getByLabelText(/api key/i), {
+    fireEvent.change(screen.getByLabelText(/API 密钥/), {
       target: { value: apiKey }
     });
-    fireEvent.click(screen.getByRole("button", { name: /save provider/i }));
+    fireEvent.click(screen.getByRole("button", { name: /保存接口源/ }));
 
     await waitFor(() => {
-      expect(screen.getByText(/provider saved/i)).toBeInTheDocument();
+      expect(screen.getByText(/接口源已保存/)).toBeInTheDocument();
     });
     expect(screen.getByText(/sk-\.\.\.alue/i)).toBeInTheDocument();
     expect(screen.queryByText(apiKey)).not.toBeInTheDocument();
+  });
+
+  it("shows localized API errors with technical detail", async () => {
+    vi.mocked(fetch)
+      .mockResolvedValueOnce(
+        await jsonResponse(
+          {
+            error: {
+              code: "PROVIDER_AUTH_FAILED",
+              message: "Provider rejected the API key.",
+              detail: "HTTP 401 Unauthorized"
+            }
+          },
+          { status: 401 }
+        )
+      )
+      .mockResolvedValueOnce(
+        await jsonResponse({
+          records: []
+        })
+      );
+
+    render(<App />);
+
+    expect(await screen.findByText(/API 密钥无效或没有权限/)).toBeInTheDocument();
+    expect(screen.getByText(/详情：HTTP 401 Unauthorized/)).toBeInTheDocument();
   });
 
   it("tests a saved provider connection", async () => {
@@ -140,10 +166,10 @@ describe("App", () => {
     render(<App />);
 
     fireEvent.click(await screen.findByRole("button", { name: /local provider/i }));
-    fireEvent.click(screen.getByRole("button", { name: /test connection/i }));
+    fireEvent.click(screen.getByRole("button", { name: /测试连接/ }));
 
     await waitFor(() => {
-      expect(screen.getByText(/provider is reachable/i)).toBeInTheDocument();
+      expect(screen.getByText(/连接测试成功/)).toBeInTheDocument();
     });
     expect(fetch).toHaveBeenCalledWith(
       "/api/providers/test",
@@ -198,8 +224,8 @@ describe("App", () => {
     fireEvent.click(await screen.findByRole("button", { name: /local provider/i }));
 
     expect(await screen.findAllByText("GPT Image")).toHaveLength(3);
-    expect(screen.getAllByText("Text to image").length).toBeGreaterThan(0);
-    expect(screen.getByText("Image to image")).toBeInTheDocument();
+    expect(screen.getAllByText("文生图").length).toBeGreaterThan(0);
+    expect(screen.getByText("图生图")).toBeInTheDocument();
     expect(fetch).toHaveBeenCalledWith(
       "/api/models/list",
       expect.objectContaining({
@@ -264,23 +290,23 @@ describe("App", () => {
     fireEvent.click(await screen.findByRole("button", { name: /local provider/i }));
     await screen.findAllByText("GPT Image");
 
-    fireEvent.change(screen.getByLabelText("Prompt"), {
+    fireEvent.change(screen.getByLabelText("正向提示词"), {
       target: { value: "A quiet studio desk" }
     });
-    fireEvent.change(screen.getByLabelText(/negative prompt/i), {
+    fireEvent.change(screen.getByLabelText(/反向提示词/), {
       target: { value: "blur" }
     });
-    fireEvent.change(screen.getByLabelText(/seed/i), {
+    fireEvent.change(screen.getByLabelText(/种子/), {
       target: { value: "42" }
     });
-    fireEvent.click(screen.getByRole("button", { name: "Generate" }));
+    fireEvent.click(screen.getByRole("button", { name: "开始生成" }));
 
-    expect(await screen.findByText(/generated 1 image/i)).toBeInTheDocument();
-    expect(screen.getByAltText(/generated result 1/i)).toHaveAttribute(
+    expect(await screen.findByText(/已生成 1 张图片/)).toBeInTheDocument();
+    expect(screen.getByAltText(/生成结果 1/)).toHaveAttribute(
       "src",
       "https://cdn.example.com/image-1.png"
     );
-    expect(screen.getAllByRole("link", { name: "Download" })[0]).toHaveAttribute(
+    expect(screen.getAllByRole("link", { name: "下载" })[0]).toHaveAttribute(
       "download",
       "image-1.png"
     );
@@ -382,27 +408,27 @@ describe("App", () => {
 
     fireEvent.click(await screen.findByRole("button", { name: /local provider/i }));
     await screen.findAllByText("Image Edit Pro");
-    fireEvent.click(screen.getByRole("tab", { name: /image/i }));
+    fireEvent.click(screen.getByRole("tab", { name: /图生图/ }));
 
     const file = new File(["hello"], "reference.png", { type: "image/png" });
-    fireEvent.change(screen.getByLabelText(/reference image/i), {
+    fireEvent.change(screen.getByLabelText(/上传参考图/), {
       target: {
         files: [file]
       }
     });
 
-    expect(await screen.findByAltText(/uploaded reference/i)).toBeInTheDocument();
+    expect(await screen.findByAltText(/上传参考图/)).toBeInTheDocument();
 
-    fireEvent.change(screen.getByLabelText("Prompt"), {
+    fireEvent.change(screen.getByLabelText("正向提示词"), {
       target: { value: "Change the wall color" }
     });
-    fireEvent.change(screen.getByLabelText(/negative prompt/i), {
+    fireEvent.change(screen.getByLabelText(/反向提示词/), {
       target: { value: "blur" }
     });
-    fireEvent.click(screen.getByRole("button", { name: "Generate" }));
+    fireEvent.click(screen.getByRole("button", { name: "开始生成" }));
 
-    expect(await screen.findByText(/generated 1 image/i)).toBeInTheDocument();
-    expect(screen.getByAltText(/generated result 1/i)).toHaveAttribute(
+    expect(await screen.findByText(/已生成 1 张图片/)).toBeInTheDocument();
+    expect(screen.getByAltText(/生成结果 1/)).toHaveAttribute(
       "src",
       "https://cdn.example.com/edited-1.png"
     );
@@ -493,32 +519,32 @@ describe("App", () => {
 
     fireEvent.click(await screen.findByRole("button", { name: /local provider/i }));
     await screen.findAllByText("GPT Image");
-    fireEvent.change(screen.getByLabelText("Prompt"), {
+    fireEvent.change(screen.getByLabelText("正向提示词"), {
       target: { value: "A reusable prompt" }
     });
-    fireEvent.change(screen.getByLabelText(/seed/i), {
+    fireEvent.change(screen.getByLabelText(/种子/), {
       target: { value: "77" }
     });
-    fireEvent.click(screen.getByRole("button", { name: "Generate" }));
+    fireEvent.click(screen.getByRole("button", { name: "开始生成" }));
 
     expect(await screen.findByRole("heading", { name: "A reusable prompt" }))
       .toBeInTheDocument();
 
-    fireEvent.change(screen.getByLabelText("Prompt"), {
+    fireEvent.change(screen.getByLabelText("正向提示词"), {
       target: { value: "Changed prompt" }
     });
-    fireEvent.click(screen.getByRole("button", { name: /reuse parameters/i }));
+    fireEvent.click(screen.getByRole("button", { name: /复用参数/ }));
 
-    expect(screen.getByLabelText("Prompt")).toHaveValue("A reusable prompt");
-    expect(screen.getByLabelText(/seed/i)).toHaveValue(77);
+    expect(screen.getByLabelText("正向提示词")).toHaveValue("A reusable prompt");
+    expect(screen.getByLabelText(/种子/)).toHaveValue(77);
 
-    const deleteButtons = screen.getAllByRole("button", { name: "Delete" });
+    const deleteButtons = screen.getAllByRole("button", { name: "删除" });
     fireEvent.click(deleteButtons[deleteButtons.length - 1]);
     await waitFor(() => {
       expect(screen.queryByRole("heading", { name: "A reusable prompt" }))
         .not.toBeInTheDocument();
     });
-    expect(screen.getByText(/successful generations will be saved/i)).toBeInTheDocument();
+    expect(screen.getByText(/成功生成的记录会保存在这里/)).toBeInTheDocument();
   });
 
   it("migrates existing localStorage history to server history", async () => {
