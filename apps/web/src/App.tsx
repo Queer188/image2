@@ -1173,6 +1173,7 @@ export function App() {
                 {isSaving ? copy.actions.saving : copy.actions.saveProvider}
               </button>
               <button
+                className="secondary"
                 disabled={
                   isTesting ||
                   isSaving ||
@@ -1186,7 +1187,7 @@ export function App() {
               </button>
               {form.id ? (
                 <button
-                  className="secondary"
+                  className="danger"
                   disabled={isSaving}
                   onClick={deleteSelectedProvider}
                   type="button"
@@ -1599,7 +1600,7 @@ export function App() {
             <h2 id="history-title">{copy.sections.generationHistory}</h2>
           </div>
           <button
-            className="secondary"
+            className="danger"
             disabled={generationHistory.length === 0 || showingBrowserHistoryFallback}
             onClick={() => void clearHistory()}
             type="button"
@@ -1657,7 +1658,11 @@ export function App() {
                   </div>
 
                   <div className="history-actions">
-                    <button onClick={() => viewHistoryRecord(record)} type="button">
+                    <button
+                      className="secondary"
+                      onClick={() => viewHistoryRecord(record)}
+                      type="button"
+                    >
                       {copy.actions.viewResults}
                     </button>
                     <button
@@ -1668,7 +1673,7 @@ export function App() {
                       {copy.actions.reuseParameters}
                     </button>
                     <button
-                      className="secondary"
+                      className="danger"
                       disabled={showingBrowserHistoryFallback}
                       onClick={() => void deleteHistoryRecord(record.id)}
                       type="button"
