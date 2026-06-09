@@ -1,338 +1,198 @@
 # image2 Tool
 
-image2 Tool is a local-first image generation workbench. Phase 8 supports API provider configuration, connection testing, model discovery, text-to-image generation, image-to-image generation, server-side generation history, and release-ready security controls through a React web app and Fastify API server. This branch adds provider adapter compatibility controls, including provider type selection and capability overrides.
+image2 Tool is a local-first image generation workbench for custom API providers. v0.2 lets a user configure a provider Base URL and API Key, discover image-capable models, run text-to-image and image-to-image generation, save successful generations to local SQLite history, and download or reuse generated results.
 
-## Current Phase
+The app is a React/Vite web client backed by a Fastify API server. The browser never calls third-party providers directly; it sends provider ids and generation parameters to the local server, and the server resolves the API Key in memory.
 
-Phase 8: persistent generation history and generated image records.
+## v0.2 Status
 
 Included:
 
-- npm workspace layout for web, server, and shared packages
-- Vite React frontend with a provider configuration form
-- Fastify backend with `GET /health` and provider configuration APIs
-- Shared package contracts for provider configuration and API errors
-- Provider create, list, update, delete, and connection test endpoints
-- Model list endpoint backed by a provider adapter
-- Model picker with loading, refresh, empty, and error states
-- Capability tags for image models, including `text-to-image` and `image-to-image`
-- Text-to-image generation endpoint backed by the provider adapter
-- Text-to-image form for model, prompt, negative prompt, ratio, quality, count, and seed
-- Generation loading, success, and error states
-- Result gallery with image preview and download links
-- Reference image upload for image-to-image generation
-- Upload validation for PNG, JPEG, and WebP files up to 5 MB
-- Image-to-image form for model, prompt, negative prompt, strength, ratio, quality, count, and seed
-- SQLite-backed generation history for text-to-image and image-to-image results
-- History actions to view results, reuse parameters, delete one item, clear all items, download images, and copy image URLs when returned
-- Automatic migration of existing browser `localStorage` history into server history
-- Data-dir storage for provider-returned generated data URL images under `assets/generated`
-- Polished empty, loading, error, and disabled button states
-- API Key redaction in responses and logs
-- Base URL SSRF checks with protocol, private address, DNS, and localhost controls
-- Explicit CORS allowlist behavior
-- Request timeouts for connection tests, model discovery, and generation
-- Security tests and release review documentation
-- lint, test, build, and dev scripts
+- Provider configuration, edit, delete, and connection testing
+- Provider type selection: `auto`, `openai-compatible`, and `image2-compatible`
+- Model discovery with image capability filtering and capability overrides
+- Text-to-image generation with prompt, negative prompt, ratio, quality, count, and seed
+- Image-to-image generation with PNG/JPEG/WebP upload, strength, ratio, quality, count, and seed
+- Result gallery with preview, download, and copy URL actions
+- SQLite-backed generation history with reuse, delete, clear, and generated data URL asset retention
+- One-time import of older browser `localStorage` history
+- API Key redaction, upload limits, provider URL SSRF checks, CORS allowlist, and provider request timeouts
 
-Not included yet:
+Not included:
 
-- Account sync or cloud history
+- Account sync, team usage, billing, or cloud history
+- Durable encrypted API Key storage
 - Long-term storage for uploaded reference image binaries
+- Public hosted deployment hardening
 
-Provider data is stored in server memory for this phase. API Keys are not returned to the browser and are not written to durable history storage. Generation history is stored in local SQLite under the configured data directory. It stores generation parameters, provider/model names, generated image metadata/URLs, and generated result asset paths, but not API Keys or uploaded reference image binaries.
+Provider metadata and API Keys are still stored in server memory in v0.2. Restarting the server clears saved providers and keys. Generation history is durable in local SQLite under `IMAGE2_DATA_DIR`.
 
 ## Requirements
 
-- Node.js 22.5 or newer for the built-in `node:sqlite` module
+- Node.js 22.5 or newer
 - npm 10 or newer
 
-## Getting Started
+The server uses the built-in `node:sqlite` module. Some Node.js 22 builds may print an experimental warning for `node:sqlite`; that warning means Node marks the module as experimental, not that image2 has fallen back to an unsafe storage mode. Use a current Node.js 22.x release or newer and run `npm run check` before release.
+
+## Install
 
 ```bash
 npm install
-cp .env.example .env
-npm run dev
 ```
 
-The web app runs on [http://localhost:5173](http://localhost:5173).
-The server runs on [http://localhost:3001](http://localhost:3001).
+Create local environment config:
 
-On Windows PowerShell, copy the environment template with:
+```bash
+cp .env.example .env
+```
+
+On Windows PowerShell:
 
 ```powershell
 Copy-Item .env.example .env
 ```
 
-The current server reads environment variables from the process environment. If your shell does not automatically load `.env`, set the values in your terminal or process manager before starting the server.
+The server reads environment variables from the process environment. This repo does not automatically load `.env`; use your shell, process manager, or local tooling to load it before starting the server.
 
-## Configuration
+## Environment Variables
 
-Server environment variables:
+`.env.example` contains the release template:
 
 ```txt
 HOST=127.0.0.1
 PORT=3001
+NODE_ENV=development
 LOG_LEVEL=info
 CORS_ORIGIN=http://localhost:5173,http://127.0.0.1:5173
 ALLOW_LOCAL_PROVIDER_URLS=true
 IMAGE2_DATA_DIR=.image2-data
 ```
 
-`CORS_ORIGIN` is a comma-separated allowlist for direct browser calls to the Fastify API. Production defaults to no cross-origin access unless this variable is set.
+- `HOST`: server bind address. Keep `127.0.0.1` for local use.
+- `PORT`: Fastify API port.
+- `NODE_ENV`: runtime mode. Production disables permissive defaults such as local provider URLs unless explicitly configured.
+- `LOG_LEVEL`: Fastify logger level.
+- `CORS_ORIGIN`: comma-separated browser origins allowed to call the API directly.
+- `ALLOW_LOCAL_PROVIDER_URLS`: allows `http://localhost` providers for local development. Keep false in production-like deployments.
+- `IMAGE2_DATA_DIR`: local SQLite database and generated result asset directory.
 
-`ALLOW_LOCAL_PROVIDER_URLS` controls whether provider Base URLs may target localhost. It defaults to enabled outside production and disabled in production. Keep it disabled for hosted deployments unless you intentionally need a local provider during development.
+## Start
 
-`IMAGE2_DATA_DIR` controls where the server keeps the local SQLite database and generated result assets. If unset, the server uses `.image2-data` under the current working directory. Generated result files saved from provider-returned data URLs are written below `assets/generated/YYYY/MM/` inside this data directory using internal ids as filenames.
-
-## Scripts
-
-```bash
-npm run dev        # start web and server together
-npm run dev:web    # start only the Vite web app
-npm run dev:server # start only the Fastify API server
-npm run lint       # run ESLint
-npm test           # run package tests
-npm run build      # build all packages
-npm run check      # run lint, tests, and build
-```
-
-Use `npm run check` as the release gate before shipping.
-
-## Health Check
+Run web and server together:
 
 ```bash
-curl http://localhost:3001/health
+npm run dev
 ```
 
-Expected response:
+Run separately:
+
+```bash
+npm run dev:web
+npm run dev:server
+```
+
+Default local URLs:
+
+- Web app: [http://localhost:5173](http://localhost:5173)
+- API server: [http://localhost:3001](http://localhost:3001)
+- Health check: [http://localhost:3001/health](http://localhost:3001/health)
+
+Release gate:
+
+```bash
+npm run check
+```
+
+## Provider Configuration
+
+1. Open the web app.
+2. Add a provider name, API Base URL, API Key, and provider type.
+3. Use `Test connection` to verify the Base URL and key are accepted.
+4. Save the provider.
+5. Refresh models and select an image-capable model.
+
+Provider type behavior:
+
+- `auto`: image2-compatible JSON first where relevant, with OpenAI-compatible fallback for image edits.
+- `openai-compatible`: uses OpenAI-style `/models`, `/images/generations`, and multipart `/images/edits`.
+- `image2-compatible`: prefers image2 JSON generation and keeps OpenAI multipart fallback.
+
+Use capability overrides when a provider returns models without image capability metadata:
 
 ```json
-{
-  "status": "ok",
-  "service": "image2-server"
-}
+[
+  { "modelId": "image-edit-pro", "capabilities": ["image-to-image"] },
+  { "modelId": "gpt-image-1", "capabilities": ["text-to-image"] }
+]
 ```
 
-## Provider API
+Never paste real API Keys into docs, issue comments, or logs. The app stores the plaintext key only in the running server process.
 
-```bash
-curl http://localhost:3001/api/providers
+## Image Generation
+
+Text-to-image requires a saved provider, a text-capable model, and a prompt. Optional controls include negative prompt, ratio, quality, count, and seed.
+
+Image-to-image additionally requires a reference image upload. Uploads are limited to PNG, JPEG, and WebP files up to 5 MB. Uploaded reference bytes stay in server memory and are lost on restart.
+
+Successful generations are saved to SQLite history. If a provider returns generated images as inline image data, the server writes generated result files under:
+
+```txt
+IMAGE2_DATA_DIR/assets/generated/YYYY/MM/
 ```
 
-Create a provider:
+Remote generated image URLs are stored as URLs only; v0.2 does not fetch remote result URLs.
 
-```bash
-curl -X POST http://localhost:3001/api/providers \
-  -H "content-type: application/json" \
-  -d '{"name":"Example","baseUrl":"https://api.example.com/v1","apiKey":"sk-...","providerType":"auto"}'
+## API Summary
+
+```txt
+GET    /health
+GET    /api/providers
+POST   /api/providers
+PUT    /api/providers/:id
+DELETE /api/providers/:id
+POST   /api/providers/test
+POST   /api/models/list
+POST   /api/images/upload
+POST   /api/images/generate
+GET    /api/history
+POST   /api/history/import
+GET    /api/history/images/:id/file
+DELETE /api/history/:id
+DELETE /api/history
 ```
 
-Test a provider before saving:
-
-```bash
-curl -X POST http://localhost:3001/api/providers/test \
-  -H "content-type: application/json" \
-  -d '{"baseUrl":"https://api.example.com/v1","apiKey":"sk-..."}'
-```
-
-The connection test sends a lightweight `GET` request to the configured base URL with a bearer token. It does not discover models or generate images.
-
-## Model Discovery API
-
-List image-capable models for a saved provider:
-
-```bash
-curl -X POST http://localhost:3001/api/models/list \
-  -H "content-type: application/json" \
-  -d '{"providerId":"provider-id"}'
-```
-
-Expected response:
-
-```json
-{
-  "models": [
-    {
-      "id": "gpt-image-1",
-      "name": "GPT Image",
-      "providerId": "provider-id",
-      "capabilities": ["text-to-image"]
-    }
-  ],
-  "fetchedAt": "2026-06-09T00:00:00.000Z"
-}
-```
-
-The browser sends only the saved `providerId`. The server reads the API Key from its in-memory provider store, calls the provider's common `/models` endpoint, normalizes OpenAI-compatible `data` responses and image2-compatible `models` responses, and filters for image-capable models.
-
-Saved providers can also set `providerType` to `openai-compatible`, `image2-compatible`, or `auto`. `auto` keeps the current image2-first behavior for image generation while preserving the OpenAI multipart fallback. Per-model `capabilityOverrides` can be stored with the provider when a provider's `/models` response omits or mislabels image capabilities.
-
-## Text-to-Image API
-
-Generate images with a saved provider and model:
-
-```bash
-curl -X POST http://localhost:3001/api/images/generate \
-  -H "content-type: application/json" \
-  -d '{
-    "providerId":"provider-id",
-    "modelId":"gpt-image-1",
-    "mode":"text-to-image",
-    "prompt":"A quiet studio desk",
-    "negativePrompt":"blur",
-    "ratio":"1:1",
-    "quality":"hd",
-    "count":1,
-    "seed":42
-  }'
-```
-
-Expected response:
-
-```json
-{
-  "images": [
-    {
-      "id": "image-id",
-      "url": "https://cdn.example.com/image.png",
-      "width": 1024,
-      "height": 1024,
-      "metadata": {
-        "index": 0
-      }
-    }
-  ],
-  "generatedAt": "2026-06-09T00:00:00.000Z",
-  "historyRecord": {
-    "id": "history-id",
-    "createdAt": "2026-06-09T00:00:00.000Z",
-    "providerId": "provider-id",
-    "providerName": "Example",
-    "modelId": "gpt-image-1",
-    "modelName": "GPT Image",
-    "parameters": {
-      "mode": "text-to-image",
-      "prompt": "A quiet studio desk",
-      "negativePrompt": "blur",
-      "ratio": "1:1",
-      "quality": "hd",
-      "count": 1,
-      "seed": 42
-    },
-    "images": []
-  }
-}
-```
-
-The browser still sends only the saved `providerId`, selected model, and generation parameters. The API Key is resolved server-side and is not returned in responses.
-
-## Image-to-Image API
-
-Upload a PNG, JPEG, or WebP reference image before generating:
-
-```bash
-curl -X POST http://localhost:3001/api/images/upload \
-  -H "content-type: application/json" \
-  -d '{
-    "fileName":"reference.png",
-    "mimeType":"image/png",
-    "dataUrl":"data:image/png;base64,..."
-  }'
-```
-
-Expected response:
-
-```json
-{
-  "image": {
-    "id": "upload-id",
-    "fileName": "reference.png",
-    "mimeType": "image/png",
-    "sizeBytes": 1024,
-    "uploadedAt": "2026-06-09T00:00:00.000Z"
-  }
-}
-```
-
-The upload response does not return the image bytes. Generate from the uploaded image id:
-
-```bash
-curl -X POST http://localhost:3001/api/images/generate \
-  -H "content-type: application/json" \
-  -d '{
-    "providerId":"provider-id",
-    "modelId":"image-edit-pro",
-    "mode":"image-to-image",
-    "prompt":"Keep the composition and change the material",
-    "negativePrompt":"blur",
-    "inputImageId":"upload-id",
-    "strength":0.6,
-    "ratio":"1:1",
-    "quality":"standard",
-    "count":1,
-    "seed":42
-  }'
-```
-
-The server resolves the API Key and uploaded image server-side. image2-compatible providers receive a JSON payload with common `image` / `input_image` fields. If that endpoint is unavailable, the adapter falls back to OpenAI-compatible multipart `images/edits` requests.
-
-If you know a provider only accepts OpenAI-compatible behavior, set `providerType` to `openai-compatible` so the server skips the image2 JSON probe. If a provider advertises the wrong model capability metadata, store `capabilityOverrides` on the provider to pin the discovered model capabilities.
-
-## Generation History
-
-Successful text-to-image and image-to-image requests are saved by the server in SQLite. Each history item includes the generated images, timestamp, provider/model names, and reusable generation parameters.
-
-History supports:
-
-- View saved generated results in the gallery
-- Reuse prompt, negative prompt, model, ratio, quality, count, seed, and strength
-- Delete a single history item
-- Clear all local history
-- Download generated images
-- Copy a generated image URL when the provider returned one
-
-The history API is:
-
-```bash
-curl http://localhost:3001/api/history
-curl -X DELETE http://localhost:3001/api/history/history-id
-curl -X DELETE http://localhost:3001/api/history
-```
-
-On first load after upgrading from browser-local history, the web app imports `image2:generation-history:v1` into `POST /api/history/import` and removes the old localStorage key only after the import succeeds. If the server is unavailable, the browser history is shown as a fallback and is not deleted.
-
-For image-to-image history, the uploaded reference image bytes are not saved. Reusing an image-to-image item restores the parameters and asks the user to upload the reference image again before regenerating.
-
-When a provider returns a generated image as a `data:image/...` URL, the server saves that generated result under `IMAGE2_DATA_DIR/assets/generated/YYYY/MM/` and returns a local download path. Remote provider image URLs are stored as URLs only; the server does not fetch remote result URLs in this phase.
-
-## Security Notes
-
-- API Keys are accepted only by provider create, update, and test endpoints.
-- API Keys are held in server memory and are not returned by provider, model, generation, upload, or history flows.
-- History records are rebuilt from whitelisted fields and do not store API Keys, Authorization headers, provider runtime configs, uploaded reference image bytes, or uploaded data URLs.
-- Logs redact Authorization headers, `apiKey`, and uploaded image data URLs.
-- Error details are normalized, length-limited, and redacted before being returned.
-- Provider Base URLs are validated before save and before outbound provider calls.
-- HTTPS is required except for localhost development when local provider URLs are enabled.
-- Private network addresses are blocked by default, including hostnames that resolve to private addresses.
-- Uploads are limited to PNG, JPEG, and WebP images up to 5 MB.
-- See [docs/security-review.md](docs/security-review.md) for the full Phase 6 review.
+See [docs/api-contract.md](docs/api-contract.md) and [docs/provider-guide.md](docs/provider-guide.md) for request and adapter details.
 
 ## FAQ
 
 ### Why did my provider URL get blocked?
 
-The server blocks URLs that are not HTTPS, target private networks, or cannot be DNS-verified. For local development providers, set `ALLOW_LOCAL_PROVIDER_URLS=true` and use `http://localhost` or `http://127.0.0.1`.
+Provider URLs must be HTTPS unless `ALLOW_LOCAL_PROVIDER_URLS=true` and the URL targets localhost. Private network, link-local, multicast, reserved, and DNS-unverified hostnames are blocked to reduce SSRF risk.
 
-### Why does the provider disappear after restart?
+### Why did my provider disappear after restart?
 
-Provider configs and API Keys are stored in server memory for this MVP. Restarting the server clears them.
+v0.2 keeps provider metadata and API Keys in server memory. Restarting the server clears them. Durable encrypted provider storage is a future phase.
 
-### Is browser history encrypted?
+### Is history encrypted?
 
-New history is stored server-side in SQLite, not in browser `localStorage`. Existing browser history is migrated on first load. The SQLite database is not encrypted in this phase, so it may include prompts and generated image URLs; it does not include API Keys or uploaded reference image bytes.
+No. History is stored in local SQLite. It may include prompts, provider/model names, generated image URLs, and generated local asset paths. It must not include API Keys, Authorization headers, uploaded reference bytes, or uploaded reference image data.
 
-### Can I expose this server publicly?
+### Why are no models shown?
 
-Not without deployment hardening. Set `NODE_ENV=production`, configure `CORS_ORIGIN`, keep `ALLOW_LOCAL_PROVIDER_URLS=false`, run behind HTTPS, and review `docs/security-review.md`.
+The provider may not expose image capability metadata. Check provider type, refresh models, then add capability overrides for known image models if needed.
+
+### Can I deploy this publicly?
+
+v0.2 is designed as a local single-user tool. A public deployment needs additional hardening: HTTPS, strict `CORS_ORIGIN`, `ALLOW_LOCAL_PROVIDER_URLS=false`, authentication, durable secret storage, rate limiting, and a fresh security review.
+
+### What should I back up?
+
+Back up `IMAGE2_DATA_DIR` if you want to keep generation history and generated result assets. API Keys are not stored there in v0.2.
+
+## More Docs
+
+- [Development](docs/development.md)
+- [API contract](docs/api-contract.md)
+- [Provider guide](docs/provider-guide.md)
+- [Security review](docs/security-review.md)
+- [v0.2.0 release notes](docs/release-v0.2.0.md)

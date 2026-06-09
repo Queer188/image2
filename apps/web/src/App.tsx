@@ -198,6 +198,10 @@ function imageHref(image: GeneratedImage | undefined): string | undefined {
   return image?.url ?? image?.localPath;
 }
 
+function isBrowserHistoryFallback(message: string | undefined): boolean {
+  return message?.startsWith("Server history is unavailable.") ?? false;
+}
+
 function createHistoryId(): string {
   if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
     return crypto.randomUUID();
@@ -328,6 +332,7 @@ export function App() {
     () => models.filter((model) => supportsGenerationMode(model, activeMode)),
     [models, activeMode]
   );
+  const showingBrowserHistoryFallback = isBrowserHistoryFallback(historyError);
 
   async function loadProviders(options: { preserveStatus?: boolean } = {}) {
     setIsLoading(true);
@@ -639,7 +644,17 @@ export function App() {
     setMessage(undefined);
     setError(undefined);
 
-    const useSavedProvider = Boolean(form.id) && !form.apiKey;
+    const savedProviderBaseUrl = selectedProvider?.baseUrl.trim();
+    const useSavedProvider =
+      Boolean(form.id) &&
+      !form.apiKey &&
+      Boolean(savedProviderBaseUrl) &&
+      form.baseUrl.trim() === savedProviderBaseUrl;
+    if (form.id && !useSavedProvider && !form.apiKey.trim()) {
+      setError("Enter an API Key to test unsaved provider changes, or save first.");
+      setIsTesting(false);
+      return;
+    }
     const payload = useSavedProvider
       ? { providerId: form.id }
       : {
@@ -798,6 +813,14 @@ export function App() {
   }
 
   async function deleteHistoryRecord(recordId: string) {
+    if (showingBrowserHistoryFallback) {
+      setHistoryError(
+        "Reconnect the server before deleting migrated browser history from this view."
+      );
+      setHistoryMessage(undefined);
+      return;
+    }
+
     try {
       const response = await fetch(`/api/history/${encodeURIComponent(recordId)}`, {
         method: "DELETE"
@@ -820,6 +843,14 @@ export function App() {
   }
 
   async function clearHistory() {
+    if (showingBrowserHistoryFallback) {
+      setHistoryError(
+        "Reconnect the server before clearing migrated browser history from this view."
+      );
+      setHistoryMessage(undefined);
+      return;
+    }
+
     try {
       const response = await fetch("/api/history", {
         method: "DELETE"
@@ -839,14 +870,24 @@ export function App() {
     }
   }
 
-  async function copyImageUrl(url: string) {
+  async function copyImageUrl(url: string, surface: "generation" | "history") {
     try {
       await copyText(url);
-      setHistoryMessage("Image URL copied.");
-      setHistoryError(undefined);
+      if (surface === "generation") {
+        setGenerationMessage("Image URL copied.");
+        setGenerationError(undefined);
+      } else {
+        setHistoryMessage("Image URL copied.");
+        setHistoryError(undefined);
+      }
     } catch {
-      setHistoryError("Unable to copy the image URL in this browser.");
-      setHistoryMessage(undefined);
+      if (surface === "generation") {
+        setGenerationError("Unable to copy the image URL in this browser.");
+        setGenerationMessage(undefined);
+      } else {
+        setHistoryError("Unable to copy the image URL in this browser.");
+        setHistoryMessage(undefined);
+      }
     }
   }
 
@@ -952,10 +993,10 @@ export function App() {
     <main className="app-shell">
       <header className="top-bar">
         <div>
-          <p className="eyebrow">Phase 5</p>
+          <p className="eyebrow">v0.2 release</p>
           <h1>image2 Generation Workbench</h1>
         </div>
-        <span className="status-pill">Generation history and polish</span>
+        <span className="status-pill">Local image generation workbench</span>
       </header>
 
       <section className="workspace" aria-labelledby="provider-title">
@@ -1049,7 +1090,8 @@ export function App() {
               disabled={
                 isTesting ||
                 isSaving ||
-                (form.id ? false : !form.baseUrl.trim() || !form.apiKey.trim())
+                !form.baseUrl.trim() ||
+                (!form.id && !form.apiKey.trim())
               }
               onClick={testProvider}
               type="button"
@@ -1151,19 +1193,26 @@ export function App() {
 
         {selectedProvider && !isLoadingModels && !modelError && models.length === 0 ? (
           <p className="empty-state">
-            No image-capable models were returned by this provider.
+            No image-capable models were returned. Refresh after checking the
+            provider type, or add capability overrides if the provider omits image
+            metadata.
           </p>
         ) : null}
 
         {models.length > 0 ? (
           <>
             <label className="model-select-label">
-              Active model
+              Model for current mode
               <select
                 onChange={(event) => setSelectedModelId(event.target.value)}
-                value={selectedModelId}
+                value={
+                  selectedModel && supportsGenerationMode(selectedModel, activeMode)
+                    ? selectedModelId
+                    : ""
+                }
               >
-                {models.map((model) => (
+                <option value="">Select model</option>
+                {activeModeModels.map((model) => (
                   <option key={model.id} value={model.id}>
                     {model.name}
                   </option>
@@ -1460,7 +1509,9 @@ export function App() {
                       {image.url ? (
                         <button
                           className="link-button"
-                          onClick={() => void copyImageUrl(image.url ?? "")}
+                          onClick={() =>
+                            void copyImageUrl(image.url ?? "", "generation")
+                          }
                           type="button"
                         >
                           Copy URL
@@ -1483,7 +1534,7 @@ export function App() {
           </div>
           <button
             className="secondary"
-            disabled={generationHistory.length === 0}
+            disabled={generationHistory.length === 0 || showingBrowserHistoryFallback}
             onClick={() => void clearHistory()}
             type="button"
           >
@@ -1551,6 +1602,7 @@ export function App() {
                     </button>
                     <button
                       className="secondary"
+                      disabled={showingBrowserHistoryFallback}
                       onClick={() => void deleteHistoryRecord(record.id)}
                       type="button"
                     >
@@ -1587,7 +1639,9 @@ export function App() {
                             {image.url ? (
                               <button
                                 className="link-button"
-                                onClick={() => void copyImageUrl(image.url ?? "")}
+                                onClick={() =>
+                                  void copyImageUrl(image.url ?? "", "history")
+                                }
                                 type="button"
                               >
                                 Copy URL
