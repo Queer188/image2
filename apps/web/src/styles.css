@@ -66,6 +66,12 @@
   box-sizing: border-box;
 }
 
+*,
+*::before,
+*::after {
+  min-width: 0;
+}
+
 html {
   background: var(--color-bg);
 }
@@ -82,6 +88,7 @@ input,
 textarea,
 select {
   font: inherit;
+  max-width: 100%;
 }
 
 button,
@@ -95,6 +102,7 @@ a {
 button {
   display: inline-flex;
   min-width: 0;
+  max-width: 100%;
   min-height: 40px;
   align-items: center;
   justify-content: center;
@@ -108,6 +116,8 @@ button {
   font-weight: 700;
   line-height: 1.2;
   text-align: center;
+  white-space: normal;
+  overflow-wrap: anywhere;
   transition:
     background-color 120ms ease,
     border-color 120ms ease,
@@ -193,6 +203,7 @@ h2,
 h3,
 p {
   margin-top: 0;
+  overflow-wrap: anywhere;
 }
 
 h1 {
@@ -247,6 +258,7 @@ h2 {
 .generation-form,
 .result-gallery,
 .history-panel {
+  min-width: 0;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
   padding: var(--space-4);
@@ -306,6 +318,7 @@ label {
 input,
 textarea,
 select {
+  min-width: 0;
   width: 100%;
   border: 1px solid var(--color-border-strong);
   border-radius: var(--radius-md);
@@ -367,8 +380,11 @@ input[type="range"] {
 }
 
 input[type="file"] {
+  overflow: hidden;
   min-height: auto;
   padding: 9px var(--space-3);
+  text-overflow: ellipsis;
+  white-space: normal;
 }
 
 .key-preview {
@@ -386,10 +402,16 @@ input[type="file"] {
   display: flex;
   flex-wrap: wrap;
   gap: 10px;
+  min-width: 0;
   margin-top: var(--space-1);
 }
 
+.button-row button {
+  flex: 0 1 auto;
+}
+
 .notice {
+  min-width: 0;
   margin: 0;
   border: 1px solid var(--color-info-border);
   border-radius: var(--radius-md);
@@ -485,6 +507,7 @@ input[type="file"] {
 .provider-row,
 .model-row {
   display: grid;
+  min-width: 0;
   width: 100%;
   align-items: center;
   border: 0;
@@ -500,6 +523,11 @@ input[type="file"] {
   grid-template-columns: minmax(0, 1fr) auto;
   gap: var(--space-3);
   min-height: 68px;
+}
+
+.provider-row > span,
+.model-row > span {
+  min-width: 0;
 }
 
 .provider-row:hover:not(:disabled),
@@ -564,6 +592,7 @@ input[type="file"] {
 }
 
 .connection-state {
+  max-width: 100%;
   border: 1px solid transparent;
   border-radius: 999px;
   padding: 4px var(--space-2);
@@ -603,10 +632,12 @@ input[type="file"] {
 
 .mode-tabs button,
 .mobile-workbench-tabs button {
+  min-width: 0;
   border-color: transparent;
   border-radius: 0;
   background: transparent;
   color: var(--color-text);
+  overflow-wrap: anywhere;
 }
 
 .mode-tabs button.selected,
@@ -685,6 +716,7 @@ input[type="file"] {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(148px, 1fr));
   gap: var(--space-4);
+  min-width: 0;
 }
 
 .image-card {
@@ -714,23 +746,33 @@ input[type="file"] {
   display: flex;
   flex-wrap: wrap;
   gap: var(--space-2);
+  min-width: 0;
   border-top: 1px solid var(--color-border);
   padding: var(--space-3);
 }
 
 .image-actions a,
 .image-actions .link-button {
+  display: inline-flex;
+  flex: 1 1 76px;
+  min-width: 0;
+  align-items: center;
+  justify-content: center;
   min-height: 34px;
   border-radius: var(--radius-md);
   padding: 8px 10px;
   font-size: 0.8125rem;
   font-weight: 800;
   line-height: 1.2;
+  text-align: center;
   text-decoration: none;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
 .history-card {
   display: grid;
+  min-width: 0;
   gap: 10px;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
@@ -790,9 +832,11 @@ input[type="file"] {
   display: flex;
   flex-wrap: wrap;
   gap: var(--space-2);
+  min-width: 0;
 }
 
 .history-actions button {
+  flex: 1 1 86px;
   min-height: 34px;
   padding: 0 10px;
   font-size: 0.8125rem;
@@ -809,6 +853,7 @@ input[type="file"] {
 
 .history-image-row {
   display: flex;
+  min-width: 0;
   align-items: center;
   justify-content: space-between;
   gap: var(--space-3);
@@ -822,19 +867,24 @@ input[type="file"] {
 
 .history-image-row > span,
 .muted-text {
+  min-width: 0;
   color: var(--color-text-muted);
   font-size: 0.8125rem;
   font-weight: 700;
+  overflow-wrap: anywhere;
 }
 
 .capability-stack {
   display: flex;
   flex-wrap: wrap;
+  min-width: 0;
   justify-content: start;
   gap: 6px;
 }
 
 .capability-pill {
+  min-width: 0;
+  max-width: 100%;
   border: 1px solid var(--color-capability-border);
   border-radius: 999px;
   padding: 5px var(--space-2);
@@ -843,7 +893,8 @@ input[type="file"] {
   font-size: 0.75rem;
   font-weight: 800;
   line-height: 1.2;
-  white-space: nowrap;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
 .model-meta {
@@ -891,6 +942,7 @@ input[type="file"] {
     display: grid;
     grid-template-columns: repeat(4, minmax(0, 1fr));
     gap: 6px;
+    min-width: 0;
     max-width: 1440px;
     margin: 0 auto 14px;
   }
@@ -902,6 +954,7 @@ input[type="file"] {
     padding: 0 6px;
     background: var(--color-surface);
     font-size: 0.875rem;
+    line-height: 1.2;
   }
 
   .mobile-workbench-tabs button.selected {
@@ -980,6 +1033,16 @@ input[type="file"] {
     font-size: 1.5rem;
   }
 
+  .mobile-workbench-tabs {
+    gap: var(--space-1);
+  }
+
+  .mobile-workbench-tabs button {
+    min-height: 40px;
+    padding: 0 var(--space-1);
+    font-size: 0.8125rem;
+  }
+
   .provider-form,
   .provider-list,
   .model-panel,
@@ -996,5 +1059,19 @@ input[type="file"] {
   .history-thumb {
     width: 100%;
     max-width: 140px;
+  }
+
+  .upload-preview {
+    grid-template-columns: 64px minmax(0, 1fr);
+  }
+
+  .upload-preview img {
+    width: 64px;
+  }
+
+  .image-actions a,
+  .image-actions .link-button,
+  .history-actions button {
+    flex-basis: 92px;
   }
 }
