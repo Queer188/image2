@@ -15,7 +15,7 @@ packages/
 - Node.js 22.5 or newer
 - npm 10 or newer
 
-The server history store uses the built-in `node:sqlite` module. If Node.js prints an experimental warning for `node:sqlite`, treat it as an upstream Node.js module-status warning. It does not change image2 storage behavior. Use a current Node.js 22.x release or newer for v0.2 development and release checks.
+The server history store uses the built-in `node:sqlite` module. If Node.js prints an experimental warning for `node:sqlite`, treat it as an upstream Node.js module-status warning. It does not change image2 storage behavior. Use a current Node.js 22.x release or newer for v0.3 development and release checks.
 
 ## Local Setup
 
@@ -57,6 +57,7 @@ npm run check      # release gate: lint, tests, build
 - The server initializes `image2.sqlite` in the data directory and runs idempotent migrations at first history access.
 - Direct browser API access is controlled by the `CORS_ORIGIN` allowlist.
 - Local provider URLs are controlled by `ALLOW_LOCAL_PROVIDER_URLS`.
+- `TRUSTED_PROVIDER_ORIGINS` accepts exact `http`/`https` origins only. Use it only for known provider origins that intentionally resolve to private or reserved addresses; do not include paths, wildcards, or network ranges.
 
 ## Generation Flow
 
@@ -86,5 +87,5 @@ npm run check      # release gate: lint, tests, build
 1. Confirm `.env.example` documents every runtime environment variable.
 2. Search docs and code changes for real API Keys, Authorization headers, uploaded image content, and inline image data.
 3. Run `npm run check`.
-4. Update `docs/release-v0.2.0.md` if behavior changed.
-5. Commit with `chore: prepare v0.2.0 release`.
+4. Update `docs/release-v0.3.0.md` if behavior changed.
+5. Commit with `chore: verify and prepare v0.3.0 release`.
