@@ -12,9 +12,9 @@ import {
   MAX_UPLOAD_BODY_BYTES,
   saveUploadedImage
 } from "./image-upload-store.js";
+import { getImageProviderAdapter } from "./provider-adapters.js";
 import { getProviderConfig, getProviderRuntimeConfig } from "./provider-store.js";
 import type { ImageProviderGenerateRequest } from "./providers/base.js";
-import { image2CompatibleAdapter } from "./providers/image2-compatible.js";
 
 const MAX_IMAGE_COUNT = 4;
 
@@ -122,6 +122,7 @@ export async function registerImageRoutes(server: FastifyInstance) {
       );
       const config = getProviderRuntimeConfig(generationRequest.providerId);
       const provider = getProviderConfig(generationRequest.providerId);
+      const adapter = getImageProviderAdapter(provider.providerType);
       const adapterRequest: ImageProviderGenerateRequest = {
         ...generationRequest
       };
@@ -147,10 +148,7 @@ export async function registerImageRoutes(server: FastifyInstance) {
         };
       }
 
-      const images = await image2CompatibleAdapter.generateImage(
-        config,
-        adapterRequest
-      );
+      const images = await adapter.generateImage(config, adapterRequest);
       const generatedAt = new Date().toISOString();
       const historyRecord = saveHistoryRecord({
         createdAt: generatedAt,

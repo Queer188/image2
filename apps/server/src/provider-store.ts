@@ -1,9 +1,12 @@
 import { randomUUID } from "node:crypto";
 import type {
   CreateProviderRequest,
+  ImageModelCapability,
+  ProviderCapabilityOverride,
   ProviderConfig,
   ProviderRuntimeConfig,
   ProviderTestResponse,
+  ProviderType,
   UpdateProviderRequest
 } from "@image2/shared";
 import { AppError, maskSecret } from "./errors.js";
@@ -13,11 +16,85 @@ type ProviderRecord = ProviderConfig;
 const providers = new Map<string, ProviderRecord>();
 const apiKeys = new Map<string, string>();
 
+const providerTypes = new Set<ProviderType>([
+  "auto",
+  "openai-compatible",
+  "image2-compatible"
+]);
+const modelCapabilities = new Set<ImageModelCapability>([
+  "text-to-image",
+  "image-to-image"
+]);
+
+function normalizeProviderType(value: unknown): ProviderType {
+  if (value === undefined || value === null || value === "") {
+    return "auto";
+  }
+
+  if (typeof value === "string" && providerTypes.has(value as ProviderType)) {
+    return value as ProviderType;
+  }
+
+  throw new AppError("BAD_REQUEST", "Provider type is invalid.", 400);
+}
+
+function normalizeCapabilityOverrides(
+  value: unknown
+): ProviderCapabilityOverride[] | undefined {
+  if (value === undefined || value === null) {
+    return undefined;
+  }
+
+  if (!Array.isArray(value)) {
+    throw new AppError("BAD_REQUEST", "Capability overrides must be an array.", 400);
+  }
+
+  const overrides = value.map((item) => {
+    if (typeof item !== "object" || item === null) {
+      throw new AppError(
+        "BAD_REQUEST",
+        "Each capability override must be an object.",
+        400
+      );
+    }
+
+    const record = item as Partial<ProviderCapabilityOverride>;
+    if (!record.modelId?.trim()) {
+      throw new AppError(
+        "BAD_REQUEST",
+        "Capability override modelId is required.",
+        400
+      );
+    }
+
+    if (
+      !Array.isArray(record.capabilities) ||
+      record.capabilities.length === 0 ||
+      record.capabilities.some((capability) => !modelCapabilities.has(capability))
+    ) {
+      throw new AppError(
+        "BAD_REQUEST",
+        "Capability overrides must use supported image capabilities.",
+        400
+      );
+    }
+
+    return {
+      modelId: record.modelId.trim(),
+      capabilities: [...new Set(record.capabilities)]
+    };
+  });
+
+  return overrides.length > 0 ? overrides : undefined;
+}
+
 function normalizeProviderInput(value: CreateProviderRequest): CreateProviderRequest {
   return {
     name: value.name.trim(),
     baseUrl: value.baseUrl.trim(),
-    apiKey: value.apiKey.trim()
+    apiKey: value.apiKey.trim(),
+    providerType: normalizeProviderType(value.providerType),
+    capabilityOverrides: normalizeCapabilityOverrides(value.capabilityOverrides)
   };
 }
 
@@ -65,6 +142,8 @@ export function createProvider(value: Partial<CreateProviderRequest>): ProviderC
     baseUrl: input.baseUrl,
     apiKeyRef,
     apiKeyPreview: maskSecret(input.apiKey),
+    providerType: input.providerType,
+    capabilityOverrides: input.capabilityOverrides,
     createdAt: now,
     updatedAt: now,
     lastTestStatus: "untested"
@@ -100,6 +179,14 @@ export function updateProvider(
     ...provider,
     name: nextName,
     baseUrl: nextBaseUrl,
+    providerType:
+      value.providerType === undefined
+        ? (provider.providerType ?? "auto")
+        : normalizeProviderType(value.providerType),
+    capabilityOverrides:
+      value.capabilityOverrides === undefined
+        ? provider.capabilityOverrides
+        : normalizeCapabilityOverrides(value.capabilityOverrides),
     updatedAt: now
   };
 
@@ -137,7 +224,9 @@ export function getProviderRuntimeConfig(id: string): ProviderRuntimeConfig {
 
   return {
     baseUrl: provider.baseUrl,
-    apiKey
+    apiKey,
+    providerType: provider.providerType ?? "auto",
+    capabilityOverrides: provider.capabilityOverrides
   };
 }
 

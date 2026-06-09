@@ -13,6 +13,11 @@ type ProviderConfig = {
   baseUrl: string;
   apiKeyRef: string;
   apiKeyPreview: string;
+  providerType?: "auto" | "openai-compatible" | "image2-compatible";
+  capabilityOverrides?: Array<{
+    modelId: string;
+    capabilities: Array<"text-to-image" | "image-to-image">;
+  }>;
   createdAt: string;
   updatedAt: string;
   lastTestedAt?: string;
@@ -46,6 +51,11 @@ type CreateProviderRequest = {
   name: string;
   baseUrl: string;
   apiKey: string;
+  providerType?: "auto" | "openai-compatible" | "image2-compatible";
+  capabilityOverrides?: Array<{
+    modelId: string;
+    capabilities: Array<"text-to-image" | "image-to-image">;
+  }>;
 };
 ```
 
@@ -56,6 +66,11 @@ type UpdateProviderRequest = {
   name?: string;
   baseUrl?: string;
   apiKey?: string;
+  providerType?: "auto" | "openai-compatible" | "image2-compatible";
+  capabilityOverrides?: Array<{
+    modelId: string;
+    capabilities: Array<"text-to-image" | "image-to-image">;
+  }>;
 };
 ```
 

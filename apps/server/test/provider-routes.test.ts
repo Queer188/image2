@@ -91,6 +91,59 @@ describe("provider routes", () => {
     expect(deleteResponse.statusCode).toBe(204);
   });
 
+  it("stores provider type and capability overrides without exposing the API key", async () => {
+    const server = buildServer();
+    const createResponse = await server.inject({
+      method: "POST",
+      url: "/api/providers",
+      payload: {
+        name: "Typed Provider",
+        baseUrl: "https://127.0.0.1/v1",
+        apiKey: "sk-type-secret",
+        providerType: "image2-compatible",
+        capabilityOverrides: [
+          {
+            modelId: "image-edit-pro",
+            capabilities: ["image-to-image"]
+          }
+        ]
+      }
+    });
+
+    expect(createResponse.statusCode).toBe(201);
+    expect(createResponse.body).not.toContain("sk-type-secret");
+
+    const provider = createResponse.json();
+    expect(provider).toMatchObject({
+      providerType: "image2-compatible",
+      capabilityOverrides: [
+        {
+          modelId: "image-edit-pro",
+          capabilities: ["image-to-image"]
+        }
+      ]
+    });
+
+    const updateResponse = await server.inject({
+      method: "PUT",
+      url: `/api/providers/${provider.id}`,
+      payload: {
+        providerType: "openai-compatible"
+      }
+    });
+
+    expect(updateResponse.statusCode).toBe(200);
+    expect(updateResponse.json()).toMatchObject({
+      providerType: "openai-compatible",
+      capabilityOverrides: [
+        {
+          modelId: "image-edit-pro",
+          capabilities: ["image-to-image"]
+        }
+      ]
+    });
+  });
+
   it("tests a provider connection with an authorization header", async () => {
     await withHttpServer((request, response) => {
       response.statusCode =

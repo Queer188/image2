@@ -10,9 +10,11 @@ import type {
   ImageModel,
   ImportHistoryResponse,
   ModelListResponse,
+  ProviderCapabilityOverride,
   ProviderConfig,
   ProviderListResponse,
   ProviderTestResponse,
+  ProviderType,
   UploadedImageRef,
   UploadImageResponse
 } from "@image2/shared";
@@ -22,6 +24,8 @@ type FormState = {
   name: string;
   baseUrl: string;
   apiKey: string;
+  providerType: ProviderType;
+  capabilityOverridesText: string;
 };
 
 type GenerationFormState = {
@@ -45,7 +49,9 @@ type UploadedInputState = {
 const emptyForm: FormState = {
   name: "",
   baseUrl: "",
-  apiKey: ""
+  apiKey: "",
+  providerType: "auto",
+  capabilityOverridesText: ""
 };
 
 const emptyGenerationForm: GenerationFormState = {
@@ -99,6 +105,67 @@ function formatStatus(provider: ProviderConfig): string {
 
 function formatCapability(capability: ImageModel["capabilities"][number]): string {
   return capability === "text-to-image" ? "Text to image" : "Image to image";
+}
+
+function formatProviderType(providerType: ProviderConfig["providerType"]): string {
+  if (providerType === "openai-compatible") {
+    return "OpenAI-compatible";
+  }
+
+  if (providerType === "image2-compatible") {
+    return "image2-compatible";
+  }
+
+  return "Auto";
+}
+
+function capabilityOverridesText(
+  overrides: ProviderCapabilityOverride[] | undefined
+): string {
+  return overrides && overrides.length > 0
+    ? JSON.stringify(overrides, null, 2)
+    : "";
+}
+
+function parseCapabilityOverrides(
+  text: string
+): ProviderCapabilityOverride[] | undefined {
+  if (!text.trim()) {
+    return undefined;
+  }
+
+  const parsed = JSON.parse(text) as unknown;
+  const capabilities = new Set(["text-to-image", "image-to-image"]);
+
+  if (!Array.isArray(parsed)) {
+    throw new Error("Capability overrides must be a JSON array.");
+  }
+
+  const overrides = parsed.map((item) => {
+    if (typeof item !== "object" || item === null) {
+      throw new Error("Each capability override must be an object.");
+    }
+
+    const record = item as Partial<ProviderCapabilityOverride>;
+    if (!record.modelId?.trim()) {
+      throw new Error("Each capability override needs a modelId.");
+    }
+
+    if (
+      !Array.isArray(record.capabilities) ||
+      record.capabilities.length === 0 ||
+      record.capabilities.some((capability) => !capabilities.has(capability))
+    ) {
+      throw new Error("Capability overrides must use supported capabilities.");
+    }
+
+    return {
+      modelId: record.modelId.trim(),
+      capabilities: [...new Set(record.capabilities)]
+    };
+  });
+
+  return overrides.length > 0 ? overrides : undefined;
 }
 
 function supportsTextToImage(model: ImageModel): boolean {
@@ -418,7 +485,7 @@ export function App() {
     setGenerationError(undefined);
   }, [activeMode, models]);
 
-  function updateField(field: keyof FormState, value: string) {
+  function updateField<K extends keyof FormState>(field: K, value: FormState[K]) {
     setForm((current) => ({
       ...current,
       [field]: value
@@ -506,9 +573,25 @@ export function App() {
     setError(undefined);
 
     const isEditing = Boolean(form.id);
+    let capabilityOverrides: ProviderCapabilityOverride[] | undefined;
+
+    try {
+      capabilityOverrides = parseCapabilityOverrides(form.capabilityOverridesText);
+    } catch (overrideError) {
+      setError(
+        overrideError instanceof Error
+          ? overrideError.message
+          : "Capability overrides are invalid."
+      );
+      setIsSaving(false);
+      return;
+    }
+
     const payload = {
       name: form.name,
       baseUrl: form.baseUrl,
+      providerType: form.providerType,
+      capabilityOverrides: capabilityOverrides ?? [],
       ...(form.apiKey ? { apiKey: form.apiKey } : {})
     };
 
@@ -536,7 +619,9 @@ export function App() {
         id: provider.id,
         name: provider.name,
         baseUrl: provider.baseUrl,
-        apiKey: ""
+        apiKey: "",
+        providerType: provider.providerType ?? "auto",
+        capabilityOverridesText: capabilityOverridesText(provider.capabilityOverrides)
       });
       setMessage("Provider saved. API Key is stored only in the server process.");
       if (isEditing) {
@@ -616,7 +701,9 @@ export function App() {
       id: provider.id,
       name: provider.name,
       baseUrl: provider.baseUrl,
-      apiKey: ""
+      apiKey: "",
+      providerType: provider.providerType ?? "auto",
+      capabilityOverridesText: capabilityOverridesText(provider.capabilityOverrides)
     });
     setMessage(undefined);
     setError(undefined);
@@ -903,6 +990,32 @@ export function App() {
           </label>
 
           <label>
+            Provider type
+            <select
+              onChange={(event) =>
+                updateField("providerType", event.target.value as ProviderType)
+              }
+              value={form.providerType}
+            >
+              <option value="auto">Auto</option>
+              <option value="openai-compatible">OpenAI-compatible</option>
+              <option value="image2-compatible">image2-compatible</option>
+            </select>
+          </label>
+
+          <label>
+            Capability overrides
+            <textarea
+              onChange={(event) =>
+                updateField("capabilityOverridesText", event.target.value)
+              }
+              placeholder='[{"modelId":"image-edit-pro","capabilities":["image-to-image"]}]'
+              rows={3}
+              value={form.capabilityOverridesText}
+            />
+          </label>
+
+          <label>
             API Key
             <input
               autoComplete="new-password"
@@ -992,6 +1105,12 @@ export function App() {
                 <span>
                   <strong>{provider.name}</strong>
                   <small>{provider.baseUrl}</small>
+                  <small>
+                    {formatProviderType(provider.providerType)}
+                    {provider.capabilityOverrides?.length
+                      ? ` - ${provider.capabilityOverrides.length} override(s)`
+                      : ""}
+                  </small>
                 </span>
                 <span className={`connection-state ${provider.lastTestStatus}`}>
                   {formatStatus(provider)}

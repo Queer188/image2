@@ -3,6 +3,7 @@ import type {
   GeneratedImage,
   ImageModel,
   ImageModelCapability,
+  ProviderCapabilityOverride,
   ProviderRuntimeConfig
 } from "@image2/shared";
 import { AppError, sanitizeErrorDetail } from "../errors.js";
@@ -19,16 +20,48 @@ const GENERATION_DETAIL_LIMIT = 240;
 const KNOWN_IMAGE_MODEL_PATTERNS = [
   "dall-e",
   "gpt-image",
-  "image",
+  "image-gen",
+  "image_generation",
+  "image-generation",
   "imagen",
   "flux",
   "sdxl",
   "stable-diffusion",
   "midjourney"
 ];
+const NON_GENERATION_IMAGE_PATTERNS = [
+  "vision",
+  "embedding",
+  "caption",
+  "classification",
+  "moderation",
+  "ocr"
+];
+const MODEL_ARRAY_KEYS = [
+  "data",
+  "models",
+  "items",
+  "result",
+  "results",
+  "response",
+  "available_models",
+  "availableModels"
+];
+const IMAGE_ARRAY_KEYS = [
+  "data",
+  "images",
+  "output",
+  "items",
+  "result",
+  "results",
+  "artifacts",
+  "generations",
+  "predictions"
+];
 
 type ModelRecord = Record<string, unknown>;
 type ImageRecord = Record<string, unknown>;
+type ImageEntry = ImageRecord | string;
 
 export function endpointFromBaseUrl(baseUrl: string, endpoint: string): Promise<URL> {
   return assertSafeProviderUrl(baseUrl).then((url) => {
@@ -50,50 +83,126 @@ export function endpointFromBaseUrl(baseUrl: string, endpoint: string): Promise<
   });
 }
 
-function asModelArray(payload: unknown): ModelRecord[] {
-  if (Array.isArray(payload)) {
-    return payload.filter(isRecord);
-  }
+function isRecord(value: unknown): value is ModelRecord {
+  return typeof value === "object" && value !== null;
+}
 
-  if (!isRecord(payload)) {
+function entriesFromRecordMap(value: unknown): ModelRecord[] {
+  if (!isRecord(value)) {
     return [];
   }
 
-  const candidates = [payload.data, payload.models, payload.items];
-  for (const candidate of candidates) {
-    if (Array.isArray(candidate)) {
-      return candidate.filter(isRecord);
+  return Object.entries(value)
+    .map(([key, item]) => {
+      if (!isRecord(item)) {
+        return undefined;
+      }
+
+      return typeof item.id === "string" ? item : { id: key, ...item };
+    })
+    .filter((item): item is ModelRecord => item !== undefined);
+}
+
+function arrayFromPayload(
+  payload: unknown,
+  preferredKeys: string[],
+  depth = 0
+): unknown[] {
+  if (Array.isArray(payload)) {
+    return payload;
+  }
+
+  if (!isRecord(payload) || depth > 3) {
+    return [];
+  }
+
+  for (const key of preferredKeys) {
+    const value = payload[key];
+    if (Array.isArray(value)) {
+      return value;
+    }
+
+    const nested = arrayFromPayload(value, preferredKeys, depth + 1);
+    if (nested.length > 0) {
+      return nested;
+    }
+  }
+
+  for (const value of Object.values(payload)) {
+    if (Array.isArray(value)) {
+      return value;
     }
   }
 
   return [];
 }
 
-function isRecord(value: unknown): value is ModelRecord {
-  return typeof value === "object" && value !== null;
+function asModelArray(payload: unknown): ModelRecord[] {
+  const array = arrayFromPayload(payload, MODEL_ARRAY_KEYS).filter(isRecord);
+  if (array.length > 0) {
+    return array;
+  }
+
+  if (!isRecord(payload)) {
+    return [];
+  }
+
+  for (const key of MODEL_ARRAY_KEYS) {
+    const mapEntries = entriesFromRecordMap(payload[key]);
+    if (mapEntries.length > 0) {
+      return mapEntries;
+    }
+  }
+
+  return entriesFromRecordMap(payload);
 }
 
 function normalizeToken(value: unknown): string {
   return typeof value === "string" ? value.toLowerCase() : "";
 }
 
+function pushTokenValue(tokens: string[], value: unknown): void {
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      pushTokenValue(tokens, item);
+    }
+    return;
+  }
+
+  if (isRecord(value)) {
+    for (const item of Object.values(value)) {
+      pushTokenValue(tokens, item);
+    }
+    return;
+  }
+
+  const token = normalizeToken(value);
+  if (token) {
+    tokens.push(token);
+  }
+}
+
 function collectTokens(record: ModelRecord): string[] {
   const tokens = [
     record.id,
+    record.model,
     record.name,
+    record.display_name,
+    record.model_name,
     record.type,
     record.task,
     record.mode,
     record.object
   ].map(normalizeToken);
 
-  for (const key of ["capability", "capabilities", "modalities", "features"]) {
-    const value = record[key];
-    if (Array.isArray(value)) {
-      tokens.push(...value.map(normalizeToken));
-    } else {
-      tokens.push(normalizeToken(value));
-    }
+  for (const key of [
+    "capability",
+    "capabilities",
+    "modalities",
+    "features",
+    "supported_modes"
+  ]) {
+    pushTokenValue(tokens, record[key]);
   }
 
   return tokens.filter(Boolean);
@@ -103,12 +212,7 @@ function collectExplicitCapabilityTokens(record: ModelRecord): string[] {
   const tokens: string[] = [];
 
   for (const key of ["capability", "capabilities", "features", "task", "mode", "type"]) {
-    const value = record[key];
-    if (Array.isArray(value)) {
-      tokens.push(...value.map(normalizeToken));
-    } else {
-      tokens.push(normalizeToken(value));
-    }
+    pushTokenValue(tokens, record[key]);
   }
 
   return tokens.filter(Boolean);
@@ -120,22 +224,57 @@ function capabilitiesFromTokens(tokens: string[]): Set<ImageModelCapability> {
 
   if (
     joined.includes("text-to-image") ||
+    joined.includes("text to image") ||
     joined.includes("txt2img") ||
-    joined.includes("image-generation")
+    joined.includes("text2img") ||
+    joined.includes("image-generation") ||
+    joined.includes("image generation") ||
+    joined.includes("image_generation")
   ) {
     capabilities.add("text-to-image");
   }
 
   if (
     joined.includes("image-to-image") ||
+    joined.includes("image to image") ||
     joined.includes("img2img") ||
     joined.includes("image-edit") ||
-    joined.includes("inpaint")
+    joined.includes("image edit") ||
+    joined.includes("inpaint") ||
+    joined.includes("outpaint") ||
+    joined.includes("variation")
   ) {
     capabilities.add("image-to-image");
   }
 
   return capabilities;
+}
+
+function overrideCapabilities(
+  record: ModelRecord,
+  overrides: ProviderCapabilityOverride[] | undefined
+): ImageModelCapability[] | undefined {
+  if (!overrides || overrides.length === 0) {
+    return undefined;
+  }
+
+  const ids = [
+    record.id,
+    record.model,
+    record.name,
+    record.model_name,
+    record.slug,
+    record.value
+  ]
+    .map(normalizeToken)
+    .filter(Boolean);
+
+  const override = overrides.find((item) => {
+    const modelId = item.modelId.toLowerCase();
+    return modelId === "*" || ids.includes(modelId);
+  });
+
+  return override ? [...new Set(override.capabilities)] : undefined;
 }
 
 function inferCapabilities(record: ModelRecord): ImageModelCapability[] {
@@ -149,8 +288,16 @@ function inferCapabilities(record: ModelRecord): ImageModelCapability[] {
   const tokens = collectTokens(record);
   const joined = tokens.join(" ");
   const capabilities = capabilitiesFromTokens(tokens);
+  const hasExcludedPattern = NON_GENERATION_IMAGE_PATTERNS.some((pattern) =>
+    joined.includes(pattern)
+  );
 
-  if (KNOWN_IMAGE_MODEL_PATTERNS.some((pattern) => joined.includes(pattern))) {
+  if (
+    capabilities.size === 0 &&
+    !hasExcludedPattern &&
+    (KNOWN_IMAGE_MODEL_PATTERNS.some((pattern) => joined.includes(pattern)) ||
+      /\bimage\b/.test(joined))
+  ) {
     capabilities.add("text-to-image");
   }
 
@@ -197,26 +344,30 @@ function numberFromUnknown(value: unknown): number | undefined {
 }
 
 function stringFromUnknown(value: unknown): string | undefined {
-  return typeof value === "string" && value.trim() ? value : undefined;
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
 }
 
-function asImageArray(payload: unknown): ImageRecord[] {
-  if (Array.isArray(payload)) {
-    return payload.filter(isRecord);
+function asImageEntries(payload: unknown): ImageEntry[] {
+  const array = arrayFromPayload(payload, IMAGE_ARRAY_KEYS);
+  if (array.length > 0) {
+    return array.filter(
+      (item): item is ImageEntry => isRecord(item) || typeof item === "string"
+    );
   }
 
-  if (!isRecord(payload)) {
-    return [];
-  }
-
-  const candidates = [payload.data, payload.images, payload.output, payload.items];
-  for (const candidate of candidates) {
-    if (Array.isArray(candidate)) {
-      return candidate.filter(isRecord);
-    }
+  if (isRecord(payload)) {
+    return [payload];
   }
 
   return [];
+}
+
+function looksLikeBase64(value: string): boolean {
+  return (
+    value.length >= 8 &&
+    /^[A-Za-z0-9+/=_\-\r\n]+$/.test(value) &&
+    !/^https?:\/\//i.test(value)
+  );
 }
 
 function dataUrlFromB64(value: unknown, mimeType = "image/png"): string | undefined {
@@ -229,17 +380,96 @@ function dataUrlFromB64(value: unknown, mimeType = "image/png"): string | undefi
     return b64;
   }
 
+  if (!looksLikeBase64(b64)) {
+    return undefined;
+  }
+
   return `data:${mimeType};base64,${b64}`;
 }
 
-function imageFromRecord(record: ImageRecord, index: number): GeneratedImage | undefined {
+function stringImageUrl(value: unknown): string | undefined {
+  const url = stringFromUnknown(value);
+  if (!url) {
+    return undefined;
+  }
+
+  if (url.startsWith("data:") || /^https?:\/\//i.test(url)) {
+    return url;
+  }
+
+  return looksLikeBase64(url) ? `data:image/png;base64,${url}` : url;
+}
+
+function firstStringFromRecord(record: ImageRecord, keys: string[]): string | undefined {
+  for (const key of keys) {
+    const value = record[key];
+    const url = stringImageUrl(value);
+    if (url) {
+      return url;
+    }
+
+    if (isRecord(value)) {
+      const nested = firstStringFromRecord(value, keys);
+      if (nested) {
+        return nested;
+      }
+    }
+  }
+
+  return undefined;
+}
+
+function mimeTypeFromRecord(record: ImageRecord): string {
+  return (
+    stringFromUnknown(record.mime_type) ??
+    stringFromUnknown(record.mimeType) ??
+    stringFromUnknown(record.content_type) ??
+    stringFromUnknown(record.contentType) ??
+    "image/png"
+  );
+}
+
+function imageFromRecord(entry: ImageEntry, index: number): GeneratedImage | undefined {
+  if (typeof entry === "string") {
+    const url = stringImageUrl(entry);
+    return url
+      ? {
+          id: randomUUID(),
+          url,
+          metadata: {
+            index
+          }
+        }
+      : undefined;
+  }
+
+  const record = entry;
   const url =
+    firstStringFromRecord(record, [
+      "url",
+      "uri",
+      "href",
+      "link",
+      "image_url",
+      "imageUrl",
+      "output_url",
+      "outputUrl",
+      "result_url",
+      "resultUrl",
+      "data_url",
+      "dataUrl",
+      "image",
+      "asset"
+    ]) ??
     stringFromUnknown(record.url) ??
-    stringFromUnknown(record.image_url) ??
-    stringFromUnknown(record.imageUrl) ??
     dataUrlFromB64(record.b64_json) ??
+    dataUrlFromB64(record.base64_json) ??
     dataUrlFromB64(record.b64Json) ??
-    dataUrlFromB64(record.base64);
+    dataUrlFromB64(record.base64, mimeTypeFromRecord(record)) ??
+    dataUrlFromB64(record.image_base64, mimeTypeFromRecord(record)) ??
+    dataUrlFromB64(record.imageBase64, mimeTypeFromRecord(record)) ??
+    dataUrlFromB64(record.content, mimeTypeFromRecord(record)) ??
+    dataUrlFromB64(record.bytes, mimeTypeFromRecord(record));
 
   if (!url) {
     return undefined;
@@ -341,20 +571,34 @@ function imageEditFormData(request: ImageProviderGenerateRequest): FormData {
   return formData;
 }
 
-function modelFromRecord(record: ModelRecord, providerId: string): ImageModel | undefined {
-  const id = typeof record.id === "string" ? record.id : undefined;
+function modelFromRecord(
+  record: ModelRecord,
+  providerId: string,
+  config: ProviderRuntimeConfig
+): ImageModel | undefined {
+  const id =
+    stringFromUnknown(record.id) ??
+    stringFromUnknown(record.model) ??
+    stringFromUnknown(record.slug) ??
+    stringFromUnknown(record.value) ??
+    stringFromUnknown(record.name);
   if (!id) {
     return undefined;
   }
 
-  const capabilities = inferCapabilities(record);
+  const capabilities =
+    overrideCapabilities(record, config.capabilityOverrides) ?? inferCapabilities(record);
   if (capabilities.length === 0) {
     return undefined;
   }
 
   return {
     id,
-    name: typeof record.name === "string" ? record.name : id,
+    name:
+      stringFromUnknown(record.name) ??
+      stringFromUnknown(record.display_name) ??
+      stringFromUnknown(record.model_name) ??
+      id,
     providerId,
     capabilities,
     supportedRatios: optionalStringArray(record, [
@@ -386,8 +630,8 @@ export function summarizeGenerationBody(body: string, apiKey: string): string {
 }
 
 export function imagesFromGenerationPayload(payload: unknown): GeneratedImage[] {
-  const images = asImageArray(payload)
-    .map((record, index) => imageFromRecord(record, index))
+  const images = asImageEntries(payload)
+    .map((entry, index) => imageFromRecord(entry, index))
     .filter((image): image is GeneratedImage => image !== undefined);
 
   if (images.length === 0) {
@@ -457,7 +701,7 @@ export const openAiCompatibleAdapter: ImageProviderAdapter = {
       }
 
       return asModelArray(payload)
-        .map((record) => modelFromRecord(record, providerId))
+        .map((record) => modelFromRecord(record, providerId, config))
         .filter((model): model is ImageModel => model !== undefined)
         .sort((left, right) => left.name.localeCompare(right.name));
     } catch (error) {

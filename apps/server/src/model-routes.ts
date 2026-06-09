@@ -1,8 +1,8 @@
 import type { ImageModel, ModelListRequest, ModelListResponse } from "@image2/shared";
 import type { FastifyInstance } from "fastify";
 import { AppError } from "./errors.js";
-import { getProviderRuntimeConfig } from "./provider-store.js";
-import { image2CompatibleAdapter } from "./providers/image2-compatible.js";
+import { getProviderConfig, getProviderRuntimeConfig } from "./provider-store.js";
+import { getImageProviderAdapter } from "./provider-adapters.js";
 
 function resolveModelListRequest(body: Partial<ModelListRequest>): ModelListRequest {
   if (!body.providerId?.trim()) {
@@ -30,8 +30,10 @@ export async function registerModelRoutes(server: FastifyInstance) {
     const { providerId } = resolveModelListRequest(
       (request.body ?? {}) as Partial<ModelListRequest>
     );
+    const provider = getProviderConfig(providerId);
     const config = getProviderRuntimeConfig(providerId);
-    const models = await image2CompatibleAdapter.listModels(config, providerId);
+    const adapter = getImageProviderAdapter(provider.providerType);
+    const models = await adapter.listModels(config, providerId);
 
     return {
       models: models.map(toPublicModel),

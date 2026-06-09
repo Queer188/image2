@@ -13,6 +13,7 @@ This review covers the current React frontend, Fastify API server, provider adap
 - Plaintext API Keys are accepted only by provider create, update, and connection-test requests.
 - Plaintext API Keys are stored only in the server process memory map.
 - Provider list/create/update responses return `apiKeyRef` and masked `apiKeyPreview`, never plaintext keys.
+- Provider type selection and capability overrides are saved as non-secret metadata only; the plaintext API Key still stays in the in-memory key map.
 - Model discovery and image generation accept `providerId`; the server resolves the API Key internally.
 - Fastify logging redacts Authorization headers, `apiKey`, upload `dataUrl`, and nested input image data URLs.
 - Public error details are sanitized for known secrets, bearer tokens, API key fields, token fields, `sk-*` key patterns, and image data URLs.

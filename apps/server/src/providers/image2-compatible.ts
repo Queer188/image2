@@ -29,9 +29,15 @@ function image2Payload(request: ImageProviderGenerateRequest): Record<string, un
     n: request.count ?? 1,
     count: request.count ?? 1,
     image: request.inputImage.dataUrl,
+    images: [request.inputImage.dataUrl],
     input_image: request.inputImage.dataUrl,
+    input_images: [request.inputImage.dataUrl],
     inputImage: request.inputImage.dataUrl,
+    inputImages: [request.inputImage.dataUrl],
+    reference_image: request.inputImage.dataUrl,
+    referenceImage: request.inputImage.dataUrl,
     mime_type: request.inputImage.mimeType,
+    mimeType: request.inputImage.mimeType,
     strength: request.strength ?? 0.5
   };
 
@@ -60,7 +66,9 @@ function shouldTryOpenAiEdit(error: unknown): boolean {
     error instanceof AppError &&
     error.code === "PROVIDER_GENERATION_FAILED" &&
     (error.detail?.startsWith("HTTP 404:") === true ||
-      error.detail?.startsWith("HTTP 405:") === true)
+      error.detail?.startsWith("HTTP 405:") === true ||
+      error.detail?.startsWith("HTTP 415:") === true ||
+      error.detail?.startsWith("HTTP 422:") === true)
   );
 }
 
