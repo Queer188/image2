@@ -1,35 +1,15 @@
 # API Contract
 
-## Phase 8 Scope
+## v0.2 Scope
 
-Phase 8 defines provider configuration, connection testing, model discovery, text-to-image generation, reference image upload, image-to-image generation, and SQLite-backed server generation history.
+v0.2 defines provider configuration, connection testing, model discovery, text-to-image generation, reference image upload, image-to-image generation, SQLite-backed generation history, generated local asset serving, and old browser history import.
 
-## Provider Types
-
-```ts
-type ProviderConfig = {
-  id: string;
-  name: string;
-  baseUrl: string;
-  apiKeyRef: string;
-  apiKeyPreview: string;
-  providerType?: "auto" | "openai-compatible" | "image2-compatible";
-  capabilityOverrides?: Array<{
-    modelId: string;
-    capabilities: Array<"text-to-image" | "image-to-image">;
-  }>;
-  createdAt: string;
-  updatedAt: string;
-  lastTestedAt?: string;
-  lastTestStatus: "untested" | "success" | "failed";
-};
-```
-
-`apiKeyRef` identifies the server-side in-memory key entry. `apiKeyPreview` is safe to show in the UI. The plaintext API Key is never returned by the API.
+The browser never receives plaintext API Keys from these APIs.
 
 ## REST Endpoints
 
 ```txt
+GET    /health
 GET    /api/providers
 POST   /api/providers
 PUT    /api/providers/:id
@@ -40,51 +20,74 @@ POST   /api/images/upload
 POST   /api/images/generate
 GET    /api/history
 POST   /api/history/import
+GET    /api/history/images/:id/file
 DELETE /api/history/:id
 DELETE /api/history
 ```
 
-Create request:
+## Health
+
+```ts
+type HealthStatus = {
+  status: "ok";
+  service: "image2-server";
+};
+```
+
+## Providers
+
+```ts
+type ProviderConnectionState = "untested" | "success" | "failed";
+
+type ProviderType = "auto" | "openai-compatible" | "image2-compatible";
+
+type ProviderCapabilityOverride = {
+  modelId: string;
+  capabilities: Array<"text-to-image" | "image-to-image">;
+};
+
+type ProviderConfig = {
+  id: string;
+  name: string;
+  baseUrl: string;
+  apiKeyRef: string;
+  apiKeyPreview: string;
+  providerType?: ProviderType;
+  capabilityOverrides?: ProviderCapabilityOverride[];
+  createdAt: string;
+  updatedAt: string;
+  lastTestedAt?: string;
+  lastTestStatus: ProviderConnectionState;
+};
+```
+
+`apiKeyRef` identifies the server-side key entry. `apiKeyPreview` is safe to show in the UI. The plaintext API Key is never returned.
 
 ```ts
 type CreateProviderRequest = {
   name: string;
   baseUrl: string;
   apiKey: string;
-  providerType?: "auto" | "openai-compatible" | "image2-compatible";
-  capabilityOverrides?: Array<{
-    modelId: string;
-    capabilities: Array<"text-to-image" | "image-to-image">;
-  }>;
+  providerType?: ProviderType;
+  capabilityOverrides?: ProviderCapabilityOverride[];
 };
-```
 
-Update request:
-
-```ts
 type UpdateProviderRequest = {
   name?: string;
   baseUrl?: string;
   apiKey?: string;
-  providerType?: "auto" | "openai-compatible" | "image2-compatible";
-  capabilityOverrides?: Array<{
-    modelId: string;
-    capabilities: Array<"text-to-image" | "image-to-image">;
-  }>;
+  providerType?: ProviderType;
+  capabilityOverrides?: ProviderCapabilityOverride[];
 };
-```
 
-Connection test request:
-
-```ts
 type TestProviderRequest =
   | { providerId: string }
   | { baseUrl: string; apiKey: string };
-```
 
-Connection test response:
+type ProviderListResponse = {
+  providers: ProviderConfig[];
+};
 
-```ts
 type ProviderTestResponse = {
   ok: boolean;
   message: string;
@@ -93,7 +96,9 @@ type ProviderTestResponse = {
 };
 ```
 
-## Model Types
+Provider create/update validates Base URL safety before persisting. Provider delete also deletes the in-memory API Key entry.
+
+## Models
 
 ```ts
 type ImageModelCapability = "text-to-image" | "image-to-image";
@@ -107,30 +112,20 @@ type ImageModel = {
   supportedQualities?: string[];
   raw?: unknown;
 };
-```
 
-`capabilities` must contain at least one image capability. Provider adapters may keep provider-specific fields in `raw`, but the public model list response does not require clients to consume raw provider data.
-
-Model list request:
-
-```ts
 type ModelListRequest = {
   providerId: string;
 };
-```
 
-Model list response:
-
-```ts
 type ModelListResponse = {
   models: ImageModel[];
   fetchedAt: string;
 };
 ```
 
-The client never sends or receives the plaintext API Key for model discovery. The server resolves `providerId` to a runtime config and calls the adapter.
+The server resolves `providerId` to a runtime provider config and calls the selected adapter. Public model responses omit adapter-only raw fields.
 
-## Generation Types
+## Uploads And Generation
 
 ```ts
 type GenerateImageMode = "text-to-image" | "image-to-image";
@@ -174,24 +169,26 @@ type GeneratedImage = {
   metadata: Record<string, unknown>;
 };
 
+type UploadImageResponse = {
+  image: UploadedImageRef;
+};
+
 type GenerateImageResponse = {
   images: GeneratedImage[];
   generatedAt: string;
   historyRecord?: GenerationHistoryRecord;
 };
-
-type UploadImageResponse = {
-  image: UploadedImageRef;
-};
 ```
 
-`POST /api/images/upload` accepts base64 data URLs for PNG, JPEG, and WebP images up to 5 MB. The response returns only metadata and an `id`; it does not echo uploaded image bytes.
+`POST /api/images/upload` accepts PNG, JPEG, and WebP image data up to 5 MB. The response returns only metadata and an upload id; it does not echo uploaded bytes.
 
-`POST /api/images/generate` accepts `mode: "text-to-image"` or `mode: "image-to-image"`. Image-to-image requests must include `inputImageId` and `strength` between `0` and `1`.
+`POST /api/images/generate` accepts `mode: "text-to-image"` or `mode: "image-to-image"`. Image-to-image requests must include `inputImageId` and a `strength` value between `0` and `1`.
 
-## History Types
+`count` must be an integer from 1 through 4. `seed`, when present, must be an integer.
 
-Generation history is a server feature backed by SQLite in the configured data directory. The browser imports old localStorage history through `POST /api/history/import` and no longer writes new history to localStorage.
+## History
+
+Generation history is backed by SQLite in `IMAGE2_DATA_DIR`. The browser imports old `localStorage` history through `POST /api/history/import` and no longer writes new history to `localStorage`.
 
 ```ts
 type GenerationHistoryInputImage = {
@@ -222,13 +219,7 @@ type GenerationHistoryRecord = {
   parameters: GenerationHistoryParameters;
   images: GeneratedImage[];
 };
-```
 
-History records must not contain plaintext API Keys, Authorization headers, provider runtime secrets, or uploaded reference image data URLs. Image-to-image records may keep reference image file metadata so users can identify which file to upload again.
-
-History list response:
-
-```ts
 type HistoryListResponse = {
   records: GenerationHistoryRecord[];
 };
@@ -243,20 +234,33 @@ type ImportHistoryResponse = {
 };
 ```
 
+History records must not contain plaintext API Keys, Authorization headers, provider runtime secrets, uploaded reference bytes, or uploaded reference image data. Image-to-image records may keep reference image file metadata so users can identify which file to upload again.
+
 `GET /api/history` returns records ordered by newest first. `DELETE /api/history/:id` deletes a single item and associated generated local assets. `DELETE /api/history` clears all items and associated generated local assets.
+
+`GET /api/history/images/:id/file` streams a generated local asset by image id after checking the asset path is still inside `IMAGE2_DATA_DIR`.
 
 ## Errors
 
-Errors use a shared shape:
+```ts
+type ApiErrorCode =
+  | "BAD_REQUEST"
+  | "HISTORY_NOT_FOUND"
+  | "PROVIDER_NOT_FOUND"
+  | "PROVIDER_AUTH_FAILED"
+  | "PROVIDER_CONNECTION_FAILED"
+  | "PROVIDER_GENERATION_FAILED"
+  | "PROVIDER_MODEL_LIST_FAILED"
+  | "PROVIDER_URL_BLOCKED"
+  | "INTERNAL_ERROR";
 
-```json
-{
-  "error": {
-    "code": "PROVIDER_AUTH_FAILED",
-    "message": "Provider rejected the API Key.",
-    "detail": "Provider returned HTTP 401."
-  }
-}
+type ApiErrorResponse = {
+  error: {
+    code: ApiErrorCode;
+    message: string;
+    detail?: string;
+  };
+};
 ```
 
-API Keys and Authorization headers must not be included in `message` or `detail`.
+API Keys, Authorization headers, uploaded image data, and provider runtime secrets must not appear in `message` or `detail`.
