@@ -1055,7 +1055,10 @@ export function App() {
             <div className="provider-stack">
               {providers.map((provider) => (
                 <button
-                  className="provider-row"
+                  aria-pressed={provider.id === selectedProvider?.id}
+                  className={`provider-row ${
+                    provider.id === selectedProvider?.id ? "selected" : ""
+                  }`}
                   key={provider.id}
                   onClick={() => editProvider(provider)}
                   type="button"
@@ -1267,6 +1270,7 @@ export function App() {
             <div className="model-grid">
               {models.map((model) => (
                 <button
+                  aria-pressed={model.id === selectedModelId}
                   className={`model-row ${
                     model.id === selectedModelId ? "selected" : ""
                   }`}
@@ -1629,7 +1633,7 @@ export function App() {
                     ) : (
                       <div className="history-thumb placeholder">{copy.empty.noImageUrl}</div>
                     )}
-                    <div>
+                    <div className="history-copy">
                       <h3>{record.parameters.prompt}</h3>
                       <p>
                         {formatMode(record.parameters.mode)} - {record.modelName} -{" "}
