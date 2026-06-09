@@ -114,23 +114,33 @@ export const zhCN = {
   },
   aria: {
     savedProviders: "已保存接口源",
-    generationMode: "生成模式"
+    generationMode: "生成模式",
+    workbench: "生图工作台",
+    workbenchMobileTabs: "工作台移动端分区"
+  },
+  mobileTabs: {
+    source: "接口源",
+    generate: "生成",
+    results: "结果",
+    history: "历史"
   },
   empty: {
     loadingProviders: "正在加载接口源...",
-    noProviders: "先添加一个 API 接口源，然后获取模型并开始生成图片。",
-    selectProviderForModels: "选择或保存接口源后即可获取模型。",
+    noProviders:
+      "还没有接口源。先添加一个 API 接口源，测试连接后再获取模型。",
+    selectProviderForModels: "还没有选择接口源。选择或保存接口源后即可获取模型。",
     loadingModels: (providerName: string) =>
       `正在从 ${providerName} 加载模型...`,
     noImageModels:
-      "没有返回可用于生图的模型。请检查接口类型后刷新，或为模型添加能力补充。",
+      "还没有可用模型。请刷新模型；如果接口返回空列表，请检查接口类型或能力补充。",
     selectProviderBeforeGenerating: "生成前请先选择或保存接口源。",
     needTextModel: "生成前请先获取可用于文生图的模型。",
     needImageModel: "生成前请先获取可用于图生图的模型。",
     uploadingReference: "正在上传参考图...",
-    generatedImagesPlaceholder: "生成后的图片会显示在这里。",
+    generatedImagesPlaceholder:
+      "还没有生成结果。完成一次文生图或图生图后，图片会显示在这里。",
     generatingImages: "正在生成图片...",
-    noHistory: "成功生成的记录会保存在这里，方便复用参数。",
+    noHistory: "还没有历史记录。成功生成后会自动保存，方便复用参数。",
     noPreviewUrl: "没有预览地址",
     noImageUrl: "没有返回图片地址"
   },

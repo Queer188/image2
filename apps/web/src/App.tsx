@@ -47,6 +47,8 @@ type UploadedInputState = {
   previewUrl: string;
 };
 
+type WorkbenchMobileTab = "source" | "generate" | "results" | "history";
+
 const emptyForm: FormState = {
   name: "",
   baseUrl: "",
@@ -314,6 +316,8 @@ export function App() {
   const [historyError, setHistoryError] = useState<string>();
   const [message, setMessage] = useState<string>();
   const [error, setError] = useState<string>();
+  const [activeMobileTab, setActiveMobileTab] =
+    useState<WorkbenchMobileTab>("generate");
 
   const selectedProvider = useMemo(
     () => providers.find((provider) => provider.id === form.id),
@@ -490,6 +494,12 @@ export function App() {
     setGenerationMessage(undefined);
     setGenerationError(undefined);
   }, [activeMode, models]);
+
+  useEffect(() => {
+    if (!isLoading && providers.length === 0) {
+      setActiveMobileTab("source");
+    }
+  }, [isLoading, providers.length]);
 
   function updateField<K extends keyof FormState>(field: K, value: FormState[K]) {
     setForm((current) => ({
@@ -986,6 +996,13 @@ export function App() {
     }
   }
 
+  const mobileTabs: Array<{ id: WorkbenchMobileTab; label: string }> = [
+    { id: "source", label: copy.mobileTabs.source },
+    { id: "generate", label: copy.mobileTabs.generate },
+    { id: "results", label: copy.mobileTabs.results },
+    { id: "history", label: copy.mobileTabs.history }
+  ];
+
   return (
     <main className="app-shell">
       <header className="top-bar">
@@ -996,179 +1013,202 @@ export function App() {
         <span className="status-pill">{copy.app.tagline}</span>
       </header>
 
-      <section className="workspace" aria-labelledby="provider-title">
-        <form className="provider-form" onSubmit={saveProvider}>
-          <div className="section-heading">
-            <p className="eyebrow">{copy.sections.apiProvider}</p>
-            <h2 id="provider-title">
-              {form.id ? copy.sections.editProvider : copy.sections.addProvider}
-            </h2>
-          </div>
+      <nav
+        aria-label={copy.aria.workbenchMobileTabs}
+        className="mobile-workbench-tabs"
+        role="tablist"
+      >
+        {mobileTabs.map((tab) => (
+          <button
+            aria-selected={activeMobileTab === tab.id}
+            className={activeMobileTab === tab.id ? "selected" : ""}
+            key={tab.id}
+            onClick={() => setActiveMobileTab(tab.id)}
+            role="tab"
+            type="button"
+          >
+            {tab.label}
+          </button>
+        ))}
+      </nav>
 
-          <label>
-            {copy.labels.providerName}
-            <input
-              autoComplete="off"
-              onChange={(event) => updateField("name", event.target.value)}
-              placeholder={copy.placeholders.providerName}
-              required
-              value={form.name}
-            />
-          </label>
+      <section className="workbench-layout" aria-label={copy.aria.workbench}>
+        <aside
+          className={`source-rail mobile-tab-panel ${
+            activeMobileTab === "source" ? "is-mobile-active" : ""
+          }`}
+        >
+          <section className="provider-list" aria-label={copy.aria.savedProviders}>
+            <div className="section-heading">
+              <p className="eyebrow">{copy.sections.savedServices}</p>
+              <h2>{copy.sections.providers}</h2>
+            </div>
 
-          <label>
-            {copy.labels.apiBaseUrl}
-            <input
-              inputMode="url"
-              onChange={(event) => updateField("baseUrl", event.target.value)}
-              placeholder={copy.placeholders.apiBaseUrl}
-              required
-              value={form.baseUrl}
-            />
-          </label>
+            {isLoading ? (
+              <p className="empty-state">{copy.empty.loadingProviders}</p>
+            ) : null}
 
-          <label>
-            {copy.labels.providerType}
-            <select
-              onChange={(event) =>
-                updateField("providerType", event.target.value as ProviderType)
-              }
-              value={form.providerType}
-            >
-              <option value="auto">{copy.providerTypes.auto}</option>
-              <option value="openai-compatible">
-                {copy.providerTypes["openai-compatible"]}
-              </option>
-              <option value="image2-compatible">
-                {copy.providerTypes["image2-compatible"]}
-              </option>
-            </select>
-          </label>
+            {!isLoading && providers.length === 0 ? (
+              <p className="empty-state">{copy.empty.noProviders}</p>
+            ) : null}
 
-          <label>
-            {copy.labels.capabilityOverrides}
-            <textarea
-              onChange={(event) =>
-                updateField("capabilityOverridesText", event.target.value)
-              }
-              placeholder='[{"modelId":"image-edit-pro","capabilities":["image-to-image"]}]'
-              rows={3}
-              value={form.capabilityOverridesText}
-            />
-          </label>
+            <div className="provider-stack">
+              {providers.map((provider) => (
+                <button
+                  className="provider-row"
+                  key={provider.id}
+                  onClick={() => editProvider(provider)}
+                  type="button"
+                >
+                  <span>
+                    <strong>{provider.name}</strong>
+                    <small>{provider.baseUrl}</small>
+                    <small>
+                      {formatProviderType(provider.providerType)}
+                      {provider.capabilityOverrides?.length
+                        ? copy.messages.providerOverrides(
+                            provider.capabilityOverrides.length
+                          )
+                        : ""}
+                    </small>
+                  </span>
+                  <span className={`connection-state ${provider.lastTestStatus}`}>
+                    {formatStatus(provider)}
+                  </span>
+                </button>
+              ))}
+            </div>
+          </section>
 
-          <label>
-            {copy.labels.apiKey}
-            <input
-              autoComplete="new-password"
-              onChange={(event) => updateField("apiKey", event.target.value)}
-              placeholder={
-                form.id ? copy.placeholders.keepCurrentKey : copy.placeholders.newApiKey
-              }
-              required={!form.id}
-              type="password"
-              value={form.apiKey}
-            />
-          </label>
+          <form className="provider-form" onSubmit={saveProvider}>
+            <div className="section-heading">
+              <p className="eyebrow">{copy.sections.apiProvider}</p>
+              <h2 id="provider-title">
+                {form.id ? copy.sections.editProvider : copy.sections.addProvider}
+              </h2>
+            </div>
 
-          {selectedProvider ? (
-            <p className="key-preview">
-              {copy.labels.currentKey}：<strong>{selectedProvider.apiKeyPreview}</strong>
-            </p>
-          ) : null}
+            <label>
+              {copy.labels.providerName}
+              <input
+                autoComplete="off"
+                onChange={(event) => updateField("name", event.target.value)}
+                placeholder={copy.placeholders.providerName}
+                required
+                value={form.name}
+              />
+            </label>
 
-          <div className="button-row">
-            <button
-              disabled={
-                isSaving ||
-                !form.name.trim() ||
-                !form.baseUrl.trim() ||
-                (!form.id && !form.apiKey.trim())
-              }
-              type="submit"
-            >
-              {isSaving ? copy.actions.saving : copy.actions.saveProvider}
-            </button>
-            <button
-              disabled={
-                isTesting ||
-                isSaving ||
-                !form.baseUrl.trim() ||
-                (!form.id && !form.apiKey.trim())
-              }
-              onClick={testProvider}
-              type="button"
-            >
-              {isTesting ? copy.actions.testing : copy.actions.testConnection}
-            </button>
-            {form.id ? (
+            <label>
+              {copy.labels.apiBaseUrl}
+              <input
+                inputMode="url"
+                onChange={(event) => updateField("baseUrl", event.target.value)}
+                placeholder={copy.placeholders.apiBaseUrl}
+                required
+                value={form.baseUrl}
+              />
+            </label>
+
+            <label>
+              {copy.labels.providerType}
+              <select
+                onChange={(event) =>
+                  updateField("providerType", event.target.value as ProviderType)
+                }
+                value={form.providerType}
+              >
+                <option value="auto">{copy.providerTypes.auto}</option>
+                <option value="openai-compatible">
+                  {copy.providerTypes["openai-compatible"]}
+                </option>
+                <option value="image2-compatible">
+                  {copy.providerTypes["image2-compatible"]}
+                </option>
+              </select>
+            </label>
+
+            <label>
+              {copy.labels.capabilityOverrides}
+              <textarea
+                onChange={(event) =>
+                  updateField("capabilityOverridesText", event.target.value)
+                }
+                placeholder='[{"modelId":"image-edit-pro","capabilities":["image-to-image"]}]'
+                rows={3}
+                value={form.capabilityOverridesText}
+              />
+            </label>
+
+            <label>
+              {copy.labels.apiKey}
+              <input
+                autoComplete="new-password"
+                onChange={(event) => updateField("apiKey", event.target.value)}
+                placeholder={
+                  form.id ? copy.placeholders.keepCurrentKey : copy.placeholders.newApiKey
+                }
+                required={!form.id}
+                type="password"
+                value={form.apiKey}
+              />
+            </label>
+
+            {selectedProvider ? (
+              <p className="key-preview">
+                {copy.labels.currentKey}：<strong>{selectedProvider.apiKeyPreview}</strong>
+              </p>
+            ) : null}
+
+            <div className="button-row">
+              <button
+                disabled={
+                  isSaving ||
+                  !form.name.trim() ||
+                  !form.baseUrl.trim() ||
+                  (!form.id && !form.apiKey.trim())
+                }
+                type="submit"
+              >
+                {isSaving ? copy.actions.saving : copy.actions.saveProvider}
+              </button>
+              <button
+                disabled={
+                  isTesting ||
+                  isSaving ||
+                  !form.baseUrl.trim() ||
+                  (!form.id && !form.apiKey.trim())
+                }
+                onClick={testProvider}
+                type="button"
+              >
+                {isTesting ? copy.actions.testing : copy.actions.testConnection}
+              </button>
+              {form.id ? (
+                <button
+                  className="secondary"
+                  disabled={isSaving}
+                  onClick={deleteSelectedProvider}
+                  type="button"
+                >
+                  {copy.actions.delete}
+                </button>
+              ) : null}
               <button
                 className="secondary"
-                disabled={isSaving}
-                onClick={deleteSelectedProvider}
+                disabled={isSaving || isTesting}
+                onClick={resetForm}
                 type="button"
               >
-                {copy.actions.delete}
+                {copy.actions.newProvider}
               </button>
-            ) : null}
-            <button
-              className="secondary"
-              disabled={isSaving || isTesting}
-              onClick={resetForm}
-              type="button"
-            >
-              {copy.actions.newProvider}
-            </button>
-          </div>
+            </div>
 
-          {message ? <p className="notice success">{message}</p> : null}
-          {error ? <p className="notice error">{error}</p> : null}
-        </form>
+            {message ? <p className="notice success">{message}</p> : null}
+            {error ? <p className="notice error">{error}</p> : null}
+          </form>
 
-        <aside className="provider-list" aria-label={copy.aria.savedProviders}>
-          <div className="section-heading">
-            <p className="eyebrow">{copy.sections.savedServices}</p>
-            <h2>{copy.sections.providers}</h2>
-          </div>
-
-          {isLoading ? (
-            <p className="empty-state">{copy.empty.loadingProviders}</p>
-          ) : null}
-
-          {!isLoading && providers.length === 0 ? (
-            <p className="empty-state">{copy.empty.noProviders}</p>
-          ) : null}
-
-          <div className="provider-stack">
-            {providers.map((provider) => (
-              <button
-                className="provider-row"
-                key={provider.id}
-                onClick={() => editProvider(provider)}
-                type="button"
-              >
-                <span>
-                  <strong>{provider.name}</strong>
-                  <small>{provider.baseUrl}</small>
-                  <small>
-                    {formatProviderType(provider.providerType)}
-                    {provider.capabilityOverrides?.length
-                      ? copy.messages.providerOverrides(
-                          provider.capabilityOverrides.length
-                        )
-                      : ""}
-                  </small>
-                </span>
-                <span className={`connection-state ${provider.lastTestStatus}`}>
-                  {formatStatus(provider)}
-                </span>
-              </button>
-            ))}
-          </div>
-        </aside>
-      </section>
-
-      <section className="model-panel" aria-labelledby="model-title">
+          <section className="model-panel" aria-labelledby="model-title">
         <div className="model-panel-header">
           <div className="section-heading">
             <p className="eyebrow">{copy.sections.modelDiscovery}</p>
@@ -1258,9 +1298,15 @@ export function App() {
             </p>
           </>
         ) : null}
-      </section>
+          </section>
+        </aside>
 
-      <section className="generation-panel" aria-labelledby="generation-title">
+        <section
+          className={`generation-panel mobile-tab-panel ${
+            activeMobileTab === "generate" ? "is-mobile-active" : ""
+          }`}
+          aria-labelledby="generation-title"
+        >
         <form className="generation-form" onSubmit={generateImages}>
           <div className="section-heading">
             <p className="eyebrow">
@@ -1475,8 +1521,15 @@ export function App() {
           ) : null}
           {generationError ? <p className="notice error">{generationError}</p> : null}
         </form>
+        </section>
 
-        <section className="result-gallery" aria-labelledby="results-title">
+        <aside className="output-rail">
+          <section
+            className={`result-gallery mobile-tab-panel ${
+              activeMobileTab === "results" ? "is-mobile-active" : ""
+            }`}
+            aria-labelledby="results-title"
+          >
           <div className="section-heading">
             <p className="eyebrow">{copy.sections.results}</p>
             <h2 id="results-title">{copy.sections.gallery}</h2>
@@ -1532,10 +1585,14 @@ export function App() {
               })}
             </div>
           ) : null}
-        </section>
-      </section>
+          </section>
 
-      <section className="history-panel" aria-labelledby="history-title">
+          <section
+            className={`history-panel mobile-tab-panel ${
+              activeMobileTab === "history" ? "is-mobile-active" : ""
+            }`}
+            aria-labelledby="history-title"
+          >
         <div className="history-header">
           <div className="section-heading">
             <p className="eyebrow">{copy.sections.history}</p>
@@ -1667,6 +1724,8 @@ export function App() {
             })}
           </div>
         ) : null}
+          </section>
+        </aside>
       </section>
     </main>
   );
