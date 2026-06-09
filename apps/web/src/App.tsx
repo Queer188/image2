@@ -2,6 +2,8 @@ import { useEffect, useMemo, useState } from "react";
 import type { FormEvent } from "react";
 import type {
   ApiErrorResponse,
+  ImageModel,
+  ModelListResponse,
   ProviderConfig,
   ProviderListResponse,
   ProviderTestResponse
@@ -49,18 +51,31 @@ function formatStatus(provider: ProviderConfig): string {
   return "Not tested";
 }
 
+function formatCapability(capability: ImageModel["capabilities"][number]): string {
+  return capability === "text-to-image" ? "Text to image" : "Image to image";
+}
+
 export function App() {
   const [providers, setProviders] = useState<ProviderConfig[]>([]);
   const [form, setForm] = useState<FormState>(emptyForm);
+  const [models, setModels] = useState<ImageModel[]>([]);
+  const [selectedModelId, setSelectedModelId] = useState("");
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [isTesting, setIsTesting] = useState(false);
+  const [isLoadingModels, setIsLoadingModels] = useState(false);
+  const [modelFetchedAt, setModelFetchedAt] = useState<string>();
+  const [modelError, setModelError] = useState<string>();
   const [message, setMessage] = useState<string>();
   const [error, setError] = useState<string>();
 
   const selectedProvider = useMemo(
     () => providers.find((provider) => provider.id === form.id),
     [providers, form.id]
+  );
+  const selectedModel = useMemo(
+    () => models.find((model) => model.id === selectedModelId),
+    [models, selectedModelId]
   );
 
   async function loadProviders(options: { preserveStatus?: boolean } = {}) {
@@ -83,9 +98,54 @@ export function App() {
     }
   }
 
+  async function loadModels(providerId = form.id) {
+    if (!providerId) {
+      setModels([]);
+      setSelectedModelId("");
+      setModelFetchedAt(undefined);
+      setModelError(undefined);
+      return;
+    }
+
+    setIsLoadingModels(true);
+    setModelError(undefined);
+
+    try {
+      const payload = await readJson<ModelListResponse>(
+        await fetch("/api/models/list", {
+          method: "POST",
+          headers: {
+            "content-type": "application/json"
+          },
+          body: JSON.stringify({ providerId })
+        })
+      );
+      setModels(payload.models);
+      setModelFetchedAt(payload.fetchedAt);
+      setSelectedModelId((current) =>
+        payload.models.some((model) => model.id === current)
+          ? current
+          : (payload.models[0]?.id ?? "")
+      );
+    } catch (loadError) {
+      setModels([]);
+      setSelectedModelId("");
+      setModelFetchedAt(undefined);
+      setModelError(
+        loadError instanceof Error ? loadError.message : "Model discovery failed."
+      );
+    } finally {
+      setIsLoadingModels(false);
+    }
+  }
+
   useEffect(() => {
     void loadProviders();
   }, []);
+
+  useEffect(() => {
+    void loadModels(selectedProvider?.id);
+  }, [selectedProvider?.id]);
 
   function updateField(field: keyof FormState, value: string) {
     setForm((current) => ({
@@ -140,6 +200,9 @@ export function App() {
         apiKey: ""
       });
       setMessage("Provider saved. API Key is stored only in the server process.");
+      if (isEditing) {
+        await loadModels(provider.id);
+      }
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : "Save failed.");
     } finally {
@@ -224,10 +287,10 @@ export function App() {
     <main className="app-shell">
       <header className="top-bar">
         <div>
-          <p className="eyebrow">Phase 1</p>
-          <h1>image2 Provider Setup</h1>
+          <p className="eyebrow">Phase 2</p>
+          <h1>image2 Model Discovery</h1>
         </div>
-        <span className="status-pill">Local API configuration</span>
+        <span className="status-pill">Provider models only</span>
       </header>
 
       <section className="workspace" aria-labelledby="provider-title">
@@ -338,6 +401,89 @@ export function App() {
             ))}
           </div>
         </aside>
+      </section>
+
+      <section className="model-panel" aria-labelledby="model-title">
+        <div className="model-panel-header">
+          <div className="section-heading">
+            <p className="eyebrow">Model discovery</p>
+            <h2 id="model-title">Models</h2>
+          </div>
+          <button
+            className="secondary"
+            disabled={!selectedProvider || isLoadingModels}
+            onClick={() => loadModels()}
+            type="button"
+          >
+            {isLoadingModels ? "Loading..." : "Refresh"}
+          </button>
+        </div>
+
+        {!selectedProvider ? (
+          <p className="empty-state">Select or save a provider to fetch models.</p>
+        ) : null}
+
+        {selectedProvider && isLoadingModels ? (
+          <p className="empty-state">Loading models from {selectedProvider.name}...</p>
+        ) : null}
+
+        {selectedProvider && !isLoadingModels && modelError ? (
+          <p className="notice error">{modelError}</p>
+        ) : null}
+
+        {selectedProvider && !isLoadingModels && !modelError && models.length === 0 ? (
+          <p className="empty-state">
+            No image-capable models were returned by this provider.
+          </p>
+        ) : null}
+
+        {models.length > 0 ? (
+          <>
+            <label className="model-select-label">
+              Active model
+              <select
+                onChange={(event) => setSelectedModelId(event.target.value)}
+                value={selectedModelId}
+              >
+                {models.map((model) => (
+                  <option key={model.id} value={model.id}>
+                    {model.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <div className="model-grid">
+              {models.map((model) => (
+                <button
+                  className={`model-row ${
+                    model.id === selectedModelId ? "selected" : ""
+                  }`}
+                  key={model.id}
+                  onClick={() => setSelectedModelId(model.id)}
+                  type="button"
+                >
+                  <span>
+                    <strong>{model.name}</strong>
+                    <small>{model.id}</small>
+                  </span>
+                  <span className="capability-stack">
+                    {model.capabilities.map((capability) => (
+                      <span className="capability-pill" key={capability}>
+                        {formatCapability(capability)}
+                      </span>
+                    ))}
+                  </span>
+                </button>
+              ))}
+            </div>
+
+            <p className="model-meta">
+              {selectedModel ? `Selected ${selectedModel.name}. ` : ""}
+              {modelFetchedAt ? `Fetched ${new Date(modelFetchedAt).toLocaleString()}.` : ""}
+            </p>
+          </>
+        ) : null}
       </section>
     </main>
   );

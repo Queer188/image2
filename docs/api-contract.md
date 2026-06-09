@@ -1,8 +1,8 @@
 # API Contract
 
-## Phase 1 Scope
+## Phase 2 Scope
 
-Phase 1 defines provider configuration and connection testing only. Model discovery, image generation, uploads, and history are intentionally out of scope.
+Phase 2 defines provider configuration, connection testing, and model discovery. Image generation, uploads, and history are intentionally out of scope.
 
 ## Provider Types
 
@@ -30,6 +30,7 @@ POST   /api/providers
 PUT    /api/providers/:id
 DELETE /api/providers/:id
 POST   /api/providers/test
+POST   /api/models/list
 ```
 
 Create request:
@@ -70,6 +71,43 @@ type ProviderTestResponse = {
   statusCode?: number;
 };
 ```
+
+## Model Types
+
+```ts
+type ImageModelCapability = "text-to-image" | "image-to-image";
+
+type ImageModel = {
+  id: string;
+  name: string;
+  providerId: string;
+  capabilities: ImageModelCapability[];
+  supportedRatios?: string[];
+  supportedQualities?: string[];
+  raw?: unknown;
+};
+```
+
+`capabilities` must contain at least one image capability. Provider adapters may keep provider-specific fields in `raw`, but the public model list response does not require clients to consume raw provider data.
+
+Model list request:
+
+```ts
+type ModelListRequest = {
+  providerId: string;
+};
+```
+
+Model list response:
+
+```ts
+type ModelListResponse = {
+  models: ImageModel[];
+  fetchedAt: string;
+};
+```
+
+The client never sends or receives the plaintext API Key for model discovery. The server resolves `providerId` to a runtime config and calls the adapter.
 
 ## Errors
 
