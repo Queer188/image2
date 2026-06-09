@@ -26,7 +26,7 @@ npm test
 npm run build
 ```
 
-## Phase 4 Notes
+## Phase 5 Notes
 
 - The web app proxies `/api` and `/health` to the local Fastify server during Vite development.
 - Provider configuration is stored in server memory. Restarting the server clears providers and API keys.
@@ -42,3 +42,7 @@ npm run build
 - The provider adapter posts text-to-image requests to the provider's common `/images/generations` endpoint.
 - Image-to-image requests first use image2-compatible JSON at `/images/generations` and fall back to OpenAI-compatible multipart `/images/edits` when JSON edits are unavailable.
 - OpenAI-compatible `data` responses and image2-compatible `images` responses are normalized to shared `GeneratedImage` objects.
+- Successful generation responses are saved in browser `localStorage` under `image2:generation-history:v1`.
+- Local history keeps generated image metadata/URLs and reusable generation parameters.
+- Local history does not store plaintext API Keys, Authorization headers, or uploaded reference image data URLs.
+- Reusing image-to-image history restores the parameters and clears the current uploaded input so the user uploads the reference image again.

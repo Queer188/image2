@@ -74,6 +74,35 @@ export type GeneratedImage = {
   metadata: Record<string, unknown>;
 };
 
+export type GenerationHistoryInputImage = {
+  fileName?: string;
+  mimeType: UploadedImageRef["mimeType"];
+  sizeBytes: number;
+};
+
+export type GenerationHistoryParameters = {
+  mode: GenerateImageMode;
+  prompt: string;
+  negativePrompt?: string;
+  ratio?: string;
+  quality?: "standard" | "hd" | "ultra" | string;
+  count?: number;
+  seed?: number;
+  strength?: number;
+  inputImage?: GenerationHistoryInputImage;
+};
+
+export type GenerationHistoryRecord = {
+  id: string;
+  createdAt: string;
+  providerId: string;
+  providerName: string;
+  modelId: string;
+  modelName: string;
+  parameters: GenerationHistoryParameters;
+  images: GeneratedImage[];
+};
+
 export type CreateProviderRequest = {
   name: string;
   baseUrl: string;

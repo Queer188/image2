@@ -1,8 +1,8 @@
 # API Contract
 
-## Phase 4 Scope
+## Phase 5 Scope
 
-Phase 4 defines provider configuration, connection testing, model discovery, text-to-image generation, reference image upload, and image-to-image generation. Complex history is intentionally out of scope.
+Phase 5 defines provider configuration, connection testing, model discovery, text-to-image generation, reference image upload, image-to-image generation, and browser-local generation history.
 
 ## Provider Types
 
@@ -167,6 +167,43 @@ type UploadImageResponse = {
 `POST /api/images/upload` accepts base64 data URLs for PNG, JPEG, and WebP images up to 5 MB. The response returns only metadata and an `id`; it does not echo uploaded image bytes.
 
 `POST /api/images/generate` accepts `mode: "text-to-image"` or `mode: "image-to-image"`. Image-to-image requests must include `inputImageId` and `strength` between `0` and `1`.
+
+## Local History Types
+
+Generation history is a browser-local feature. There is no server history endpoint in Phase 5.
+
+```ts
+type GenerationHistoryInputImage = {
+  fileName?: string;
+  mimeType: "image/png" | "image/jpeg" | "image/webp";
+  sizeBytes: number;
+};
+
+type GenerationHistoryParameters = {
+  mode: GenerateImageMode;
+  prompt: string;
+  negativePrompt?: string;
+  ratio?: string;
+  quality?: "standard" | "hd" | "ultra" | string;
+  count?: number;
+  seed?: number;
+  strength?: number;
+  inputImage?: GenerationHistoryInputImage;
+};
+
+type GenerationHistoryRecord = {
+  id: string;
+  createdAt: string;
+  providerId: string;
+  providerName: string;
+  modelId: string;
+  modelName: string;
+  parameters: GenerationHistoryParameters;
+  images: GeneratedImage[];
+};
+```
+
+History records must not contain plaintext API Keys, Authorization headers, provider runtime secrets, or uploaded reference image data URLs. Image-to-image records may keep reference image file metadata so users can identify which file to upload again.
 
 ## Errors
 

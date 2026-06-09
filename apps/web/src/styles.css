@@ -224,7 +224,8 @@ select:focus {
 }
 
 .generation-form,
-.result-gallery {
+.result-gallery,
+.history-panel {
   border: 1px solid #cad7dd;
   border-radius: 8px;
   padding: 22px;
@@ -354,6 +355,109 @@ select:focus {
   font-size: 0.85rem;
   font-weight: 800;
   text-decoration: none;
+}
+
+.image-actions .link-button {
+  min-height: 36px;
+  border-color: #c2d0d7;
+  padding: 8px 10px;
+  background: #ffffff;
+  color: #25323b;
+  font-size: 0.85rem;
+  font-weight: 800;
+}
+
+.history-panel {
+  max-width: 1120px;
+  margin: 24px auto 0;
+}
+
+.history-header {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.history-list {
+  display: grid;
+  gap: 14px;
+}
+
+.history-card {
+  display: grid;
+  gap: 14px;
+  border: 1px solid #d6e0e5;
+  border-radius: 8px;
+  padding: 14px;
+  background: #f8fafb;
+}
+
+.history-summary {
+  display: grid;
+  grid-template-columns: 96px minmax(0, 1fr);
+  gap: 14px;
+  align-items: start;
+}
+
+.history-thumb {
+  width: 96px;
+  aspect-ratio: 1 / 1;
+  border: 1px solid #cbd8de;
+  border-radius: 6px;
+  object-fit: cover;
+  background: #e7eef2;
+}
+
+.history-thumb.placeholder {
+  display: grid;
+  place-items: center;
+  color: #5a6973;
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.history-card h3 {
+  margin: 0 0 8px;
+  overflow-wrap: anywhere;
+  color: #17202a;
+  font-size: 1rem;
+  line-height: 1.35;
+}
+
+.history-card p {
+  margin: 0 0 6px;
+  overflow-wrap: anywhere;
+  color: #5a6973;
+  font-size: 0.88rem;
+  line-height: 1.45;
+}
+
+.history-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.history-images {
+  display: grid;
+  gap: 8px;
+}
+
+.history-image-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border-top: 1px solid #d6e0e5;
+  padding-top: 8px;
+}
+
+.history-image-row > span,
+.muted-text {
+  color: #5a6973;
+  font-size: 0.85rem;
+  font-weight: 700;
 }
 
 .model-panel-header {
@@ -534,6 +638,29 @@ select:focus {
   .generation-controls,
   .gallery-grid {
     grid-template-columns: 1fr;
+  }
+
+  .history-header,
+  .history-image-row {
+    display: block;
+  }
+
+  .history-header button {
+    margin-bottom: 16px;
+    width: 100%;
+  }
+
+  .history-summary {
+    grid-template-columns: 72px minmax(0, 1fr);
+  }
+
+  .history-thumb {
+    width: 72px;
+  }
+
+  .history-image-row .image-actions {
+    margin-top: 8px;
+    padding: 0;
   }
 
   .button-row button {

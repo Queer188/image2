@@ -1,8 +1,8 @@
 # Product Requirements
 
-## Phase 4: Image-to-Image MVP
+## Phase 5: History and Polish
 
-The current workflow lets a user configure one or more image API providers, test whether a provider is reachable, fetch image-capable models, generate images from text prompts, and generate images from an uploaded reference image.
+The current workflow lets a user configure one or more image API providers, test whether a provider is reachable, fetch image-capable models, generate images from text prompts, generate images from an uploaded reference image, and manage local generation history.
 
 ## User Flow
 
@@ -25,8 +25,11 @@ The current workflow lets a user configure one or more image API providers, test
 17. User submits the generation request.
 18. The app shows uploading, generating, success, or failure state.
 19. Successful results appear in a gallery with preview and download actions.
+20. Successful generations are saved to local history.
+21. User can view historical results, reuse parameters, delete one history item, clear all history, download historical images, and copy image URLs when available.
+22. For image-to-image history reuse, the app restores parameters but does not restore the original uploaded image bytes.
 
-## Phase 4 Acceptance
+## Phase 5 Acceptance
 
 - User can add, edit, delete, and list providers.
 - User can test a provider before or after saving.
@@ -41,4 +44,10 @@ The current workflow lets a user configure one or more image API providers, test
 - Upload errors are clear and do not clear the generation form.
 - Generation preserves form input on failure.
 - Generated images are previewable and downloadable.
-- Complex history controls are not implemented in this phase.
+- Text-to-image and image-to-image successes are saved to browser-local history.
+- History records can be viewed, reused, deleted individually, and cleared as a group.
+- Historical images can be downloaded.
+- Historical image URLs can be copied when a URL exists.
+- History records do not include API Keys.
+- History records do not include uploaded reference image binaries or data URLs.
+- Empty, loading, error, and disabled states keep users from submitting incomplete actions.
