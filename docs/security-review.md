@@ -32,6 +32,8 @@ Known limitation: API Keys are not durable in v0.2. Restarting the server clears
 - `ALLOW_LOCAL_PROVIDER_URLS` defaults to enabled outside production and disabled in production.
 - Direct private, loopback, link-local, carrier-grade NAT, benchmark, multicast, reserved IPv4, unique-local IPv6, link-local IPv6, loopback IPv6, unspecified IPv6, multicast IPv6, and IPv4-mapped private IPv6 addresses are blocked unless they are localhost and local provider URLs are enabled.
 - Hostnames are DNS-resolved during validation; hostnames that resolve to private addresses are blocked.
+- `TRUSTED_PROVIDER_ORIGINS` can explicitly trust comma-separated exact `http` or `https` provider origins that are allowed to resolve to private or reserved addresses.
+- Trusted provider origins do not support wildcards, paths, network ranges, or disabling SSRF checks globally. Protocol checks and unrelated-origin checks still apply.
 - Hostnames that cannot be DNS-verified are blocked.
 - Provider fetches use `redirect: "manual"` to avoid following redirects to a different host.
 
@@ -84,6 +86,7 @@ Current tests cover:
 - Auth errors do not echo API Keys.
 - Localhost URLs are blocked in production and when `ALLOW_LOCAL_PROVIDER_URLS=false`.
 - Private network provider URLs are blocked during provider save.
+- DNS-resolved benchmark addresses are blocked by default, allowed for exact `TRUSTED_PROVIDER_ORIGINS` matches, and still blocked for non-matching origins.
 - CORS allows configured origins and rejects unconfigured origins.
 - Model-list and generation provider error details are redacted.
 - Uploads reject unsupported MIME types and files over 5 MB.
@@ -109,6 +112,7 @@ Use `.env.example` as the release configuration template.
 - `LOG_LEVEL`: Fastify log level, default `info`
 - `CORS_ORIGIN`: comma-separated allowed origins for direct browser API calls
 - `ALLOW_LOCAL_PROVIDER_URLS`: set `true` only when intentionally calling localhost providers
+- `TRUSTED_PROVIDER_ORIGINS`: comma-separated exact provider origins that may resolve to private or reserved addresses
 - `IMAGE2_DATA_DIR`: local SQLite database and generated result asset directory
 
 ## Known Limitations

@@ -65,6 +65,7 @@ NODE_ENV=development
 LOG_LEVEL=info
 CORS_ORIGIN=http://localhost:5173,http://127.0.0.1:5173
 ALLOW_LOCAL_PROVIDER_URLS=true
+TRUSTED_PROVIDER_ORIGINS=
 IMAGE2_DATA_DIR=.image2-data
 ```
 
@@ -74,6 +75,7 @@ IMAGE2_DATA_DIR=.image2-data
 - `LOG_LEVEL`: Fastify logger level.
 - `CORS_ORIGIN`: comma-separated browser origins allowed to call the API directly.
 - `ALLOW_LOCAL_PROVIDER_URLS`: allows `http://localhost` providers for local development. Keep false in production-like deployments.
+- `TRUSTED_PROVIDER_ORIGINS`: comma-separated exact provider origins that may resolve to private or reserved addresses, for example `https://www.right.codes`. Wildcards, paths, and network ranges are not supported.
 - `IMAGE2_DATA_DIR`: local SQLite database and generated result asset directory.
 
 ## Start
@@ -168,6 +170,8 @@ See [docs/api-contract.md](docs/api-contract.md) and [docs/provider-guide.md](do
 ### Why did my provider URL get blocked?
 
 Provider URLs must be HTTPS unless `ALLOW_LOCAL_PROVIDER_URLS=true` and the URL targets localhost. Private network, link-local, multicast, reserved, and DNS-unverified hostnames are blocked to reduce SSRF risk.
+
+If a specific provider origin intentionally resolves to a private or reserved address, add only that exact origin to `TRUSTED_PROVIDER_ORIGINS`, for example `TRUSTED_PROVIDER_ORIGINS=https://www.right.codes`. This bypasses the private/reserved address check for matching provider URLs only; non-HTTP protocols and unrelated origins remain blocked.
 
 ### Why did my provider disappear after restart?
 

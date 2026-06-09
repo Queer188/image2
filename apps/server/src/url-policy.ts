@@ -25,6 +25,37 @@ function localProviderUrlsAllowed(): boolean {
   return envFlag(process.env.ALLOW_LOCAL_PROVIDER_URLS) ?? process.env.NODE_ENV !== "production";
 }
 
+function trustedProviderOrigins(): Set<string> {
+  const configured = process.env.TRUSTED_PROVIDER_ORIGINS;
+  const origins = new Set<string>();
+  if (!configured) {
+    return origins;
+  }
+
+  for (const entry of configured.split(",")) {
+    const value = entry.trim();
+    if (!value || value.includes("*")) {
+      continue;
+    }
+
+    let parsed: URL;
+    try {
+      parsed = new URL(value);
+    } catch {
+      continue;
+    }
+
+    if (
+      (parsed.protocol === "https:" || parsed.protocol === "http:") &&
+      parsed.origin === value
+    ) {
+      origins.add(parsed.origin);
+    }
+  }
+
+  return origins;
+}
+
 function isPrivateIpv4(address: string): boolean {
   const parts = address.split(".").map(Number);
   if (parts.length !== 4 || parts.some((part) => Number.isNaN(part))) {
@@ -95,6 +126,7 @@ export async function assertSafeProviderUrl(baseUrl: string): Promise<URL> {
 
   const allowLocal = localProviderUrlsAllowed();
   const hostname = parsed.hostname;
+  const trustedOrigin = trustedProviderOrigins().has(parsed.origin);
 
   if (isLocalHost(hostname) && !allowLocal) {
     throw new AppError(
@@ -120,7 +152,12 @@ export async function assertSafeProviderUrl(baseUrl: string): Promise<URL> {
     );
   }
 
-  if (isIP(hostname) && isPrivateAddress(hostname) && !(allowLocal && isLocalHost(hostname))) {
+  if (
+    isIP(hostname) &&
+    isPrivateAddress(hostname) &&
+    !trustedOrigin &&
+    !(allowLocal && isLocalHost(hostname))
+  ) {
     throw new AppError(
       "PROVIDER_URL_BLOCKED",
       "Provider URL cannot target private network addresses.",
@@ -131,7 +168,7 @@ export async function assertSafeProviderUrl(baseUrl: string): Promise<URL> {
   if (!isIP(hostname) && !isLocalHost(hostname)) {
     try {
       const records = await lookup(hostname, { all: true });
-      if (records.some((record) => isPrivateAddress(record.address))) {
+      if (!trustedOrigin && records.some((record) => isPrivateAddress(record.address))) {
         throw new AppError(
           "PROVIDER_URL_BLOCKED",
           "Provider URL cannot resolve to private network addresses.",
