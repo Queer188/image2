@@ -39,6 +39,7 @@ export type GenerateImageMode = "text-to-image" | "image-to-image";
 export type GenerateImageRequest = {
   providerId: string;
   modelId: string;
+  modelName?: string;
   mode: GenerateImageMode;
   prompt: string;
   negativePrompt?: string;
@@ -150,14 +151,29 @@ export type ModelListResponse = {
 export type GenerateImageResponse = {
   images: GeneratedImage[];
   generatedAt: string;
+  historyRecord?: GenerationHistoryRecord;
 };
 
 export type UploadImageResponse = {
   image: UploadedImageRef;
 };
 
+export type HistoryListResponse = {
+  records: GenerationHistoryRecord[];
+};
+
+export type ImportHistoryRequest = {
+  records: GenerationHistoryRecord[];
+};
+
+export type ImportHistoryResponse = {
+  imported: number;
+  records: GenerationHistoryRecord[];
+};
+
 export type ApiErrorCode =
   | "BAD_REQUEST"
+  | "HISTORY_NOT_FOUND"
   | "PROVIDER_NOT_FOUND"
   | "PROVIDER_AUTH_FAILED"
   | "PROVIDER_CONNECTION_FAILED"

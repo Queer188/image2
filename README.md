@@ -1,10 +1,10 @@
 # image2 Tool
 
-image2 Tool is a local-first image generation workbench. Phase 6 supports API provider configuration, connection testing, model discovery, text-to-image generation, image-to-image generation, local generation history, and release-ready security controls through a React web app and Fastify API server.
+image2 Tool is a local-first image generation workbench. Phase 8 supports API provider configuration, connection testing, model discovery, text-to-image generation, image-to-image generation, server-side generation history, and release-ready security controls through a React web app and Fastify API server.
 
 ## Current Phase
 
-Phase 6: security review and release preparation.
+Phase 8: persistent generation history and generated image records.
 
 Included:
 
@@ -23,8 +23,10 @@ Included:
 - Reference image upload for image-to-image generation
 - Upload validation for PNG, JPEG, and WebP files up to 5 MB
 - Image-to-image form for model, prompt, negative prompt, strength, ratio, quality, count, and seed
-- Local generation history for text-to-image and image-to-image results
+- SQLite-backed generation history for text-to-image and image-to-image results
 - History actions to view results, reuse parameters, delete one item, clear all items, download images, and copy image URLs when returned
+- Automatic migration of existing browser `localStorage` history into server history
+- Data-dir storage for provider-returned generated data URL images under `assets/generated`
 - Polished empty, loading, error, and disabled button states
 - API Key redaction in responses and logs
 - Base URL SSRF checks with protocol, private address, DNS, and localhost controls
@@ -35,14 +37,14 @@ Included:
 
 Not included yet:
 
-- Account sync or server-side history
+- Account sync or cloud history
 - Long-term storage for uploaded reference image binaries
 
-Provider data is stored in server memory for this phase. API Keys are not returned to the browser and are not written to durable storage in cleartext. Generation history is stored in browser `localStorage`; it stores generation parameters, provider/model names, and generated image metadata/URLs, but not API Keys or uploaded reference image binaries.
+Provider data is stored in server memory for this phase. API Keys are not returned to the browser and are not written to durable history storage. Generation history is stored in local SQLite under the configured data directory. It stores generation parameters, provider/model names, generated image metadata/URLs, and generated result asset paths, but not API Keys or uploaded reference image binaries.
 
 ## Requirements
 
-- Node.js 20 or newer
+- Node.js 22.5 or newer for the built-in `node:sqlite` module
 - npm 10 or newer
 
 ## Getting Started
@@ -74,11 +76,14 @@ PORT=3001
 LOG_LEVEL=info
 CORS_ORIGIN=http://localhost:5173,http://127.0.0.1:5173
 ALLOW_LOCAL_PROVIDER_URLS=true
+IMAGE2_DATA_DIR=.image2-data
 ```
 
 `CORS_ORIGIN` is a comma-separated allowlist for direct browser calls to the Fastify API. Production defaults to no cross-origin access unless this variable is set.
 
 `ALLOW_LOCAL_PROVIDER_URLS` controls whether provider Base URLs may target localhost. It defaults to enabled outside production and disabled in production. Keep it disabled for hosted deployments unless you intentionally need a local provider during development.
+
+`IMAGE2_DATA_DIR` controls where the server keeps the local SQLite database and generated result assets. If unset, the server uses `.image2-data` under the current working directory. Generated result files saved from provider-returned data URLs are written below `assets/generated/YYYY/MM/` inside this data directory using internal ids as filenames.
 
 ## Scripts
 
@@ -196,7 +201,25 @@ Expected response:
       }
     }
   ],
-  "generatedAt": "2026-06-09T00:00:00.000Z"
+  "generatedAt": "2026-06-09T00:00:00.000Z",
+  "historyRecord": {
+    "id": "history-id",
+    "createdAt": "2026-06-09T00:00:00.000Z",
+    "providerId": "provider-id",
+    "providerName": "Example",
+    "modelId": "gpt-image-1",
+    "modelName": "GPT Image",
+    "parameters": {
+      "mode": "text-to-image",
+      "prompt": "A quiet studio desk",
+      "negativePrompt": "blur",
+      "ratio": "1:1",
+      "quality": "hd",
+      "count": 1,
+      "seed": 42
+    },
+    "images": []
+  }
 }
 ```
 
@@ -254,7 +277,7 @@ The server resolves the API Key and uploaded image server-side. image2-compatibl
 
 ## Generation History
 
-Successful text-to-image and image-to-image requests are saved locally in the browser. Each history item includes the generated images, timestamp, provider/model names, and reusable generation parameters.
+Successful text-to-image and image-to-image requests are saved by the server in SQLite. Each history item includes the generated images, timestamp, provider/model names, and reusable generation parameters.
 
 History supports:
 
@@ -265,12 +288,25 @@ History supports:
 - Download generated images
 - Copy a generated image URL when the provider returned one
 
+The history API is:
+
+```bash
+curl http://localhost:3001/api/history
+curl -X DELETE http://localhost:3001/api/history/history-id
+curl -X DELETE http://localhost:3001/api/history
+```
+
+On first load after upgrading from browser-local history, the web app imports `image2:generation-history:v1` into `POST /api/history/import` and removes the old localStorage key only after the import succeeds. If the server is unavailable, the browser history is shown as a fallback and is not deleted.
+
 For image-to-image history, the uploaded reference image bytes are not saved. Reusing an image-to-image item restores the parameters and asks the user to upload the reference image again before regenerating.
+
+When a provider returns a generated image as a `data:image/...` URL, the server saves that generated result under `IMAGE2_DATA_DIR/assets/generated/YYYY/MM/` and returns a local download path. Remote provider image URLs are stored as URLs only; the server does not fetch remote result URLs in this phase.
 
 ## Security Notes
 
 - API Keys are accepted only by provider create, update, and test endpoints.
 - API Keys are held in server memory and are not returned by provider, model, generation, upload, or history flows.
+- History records are rebuilt from whitelisted fields and do not store API Keys, Authorization headers, provider runtime configs, uploaded reference image bytes, or uploaded data URLs.
 - Logs redact Authorization headers, `apiKey`, and uploaded image data URLs.
 - Error details are normalized, length-limited, and redacted before being returned.
 - Provider Base URLs are validated before save and before outbound provider calls.
@@ -291,7 +327,7 @@ Provider configs and API Keys are stored in server memory for this MVP. Restarti
 
 ### Is browser history encrypted?
 
-No. History is local to the browser profile and does not include API Keys or uploaded reference image bytes, but it may include generated image URLs.
+New history is stored server-side in SQLite, not in browser `localStorage`. Existing browser history is migrated on first load. The SQLite database is not encrypted in this phase, so it may include prompts and generated image URLs; it does not include API Keys or uploaded reference image bytes.
 
 ### Can I expose this server publicly?
 
