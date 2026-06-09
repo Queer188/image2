@@ -1,6 +1,6 @@
 # Security Review
 
-## Phase 4 Checks
+## Phase 5 Checks
 
 - API Keys are never returned from provider APIs.
 - API Keys are not stored in browser localStorage or IndexedDB.
@@ -22,6 +22,11 @@
 - Generation error details are length-limited and sanitized before being returned.
 - Image generation count is limited to 4 per request in this phase.
 - Fastify logger redacts upload `dataUrl` fields if request bodies are logged.
+- Generation history is stored only in browser `localStorage`.
+- Generation history stores provider/model identifiers, generation parameters, and generated image metadata/URLs.
+- Generation history does not store plaintext API Keys, Authorization headers, or provider runtime configs.
+- Generation history does not store uploaded reference image data URLs or raw binaries.
+- Image-to-image history stores only reference image file metadata for user recognition.
 
 ## Known Limitations
 
@@ -30,3 +35,4 @@
 - Capability detection uses common provider fields and conservative model-name heuristics. Private provider schemas may require adapter-specific mapping later.
 - Generated image URLs are displayed in the browser. A later phase should add stronger URL validation and local asset storage if results need to be retained.
 - Uploaded images are stored in server memory for this phase. They are lost on restart and are not yet garbage-collected by age.
+- Browser-local history is not encrypted and is scoped to the user's browser profile. A later phase should add user-controlled export/delete controls if history becomes more durable or syncable.

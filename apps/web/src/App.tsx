@@ -3,6 +3,7 @@ import type { ChangeEvent, FormEvent } from "react";
 import type {
   ApiErrorResponse,
   GeneratedImage,
+  GenerationHistoryRecord,
   GenerateImageMode,
   GenerateImageResponse,
   ImageModel,
@@ -10,6 +11,7 @@ import type {
   ProviderConfig,
   ProviderListResponse,
   ProviderTestResponse,
+  UploadedImageRef,
   UploadImageResponse
 } from "@image2/shared";
 
@@ -33,7 +35,7 @@ type GenerationFormState = {
 type UploadedInputState = {
   id: string;
   fileName?: string;
-  mimeType: string;
+  mimeType: UploadedImageRef["mimeType"];
   sizeBytes: number;
   previewUrl: string;
 };
@@ -58,13 +60,17 @@ const ratioOptions = ["1:1", "4:3", "3:4", "16:9", "9:16"];
 const qualityOptions = ["standard", "hd", "ultra"];
 const MAX_UPLOAD_BYTES = 5 * 1024 * 1024;
 const allowedUploadMimeTypes = ["image/png", "image/jpeg", "image/webp"];
+const HISTORY_STORAGE_KEY = "image2:generation-history:v1";
+const MAX_HISTORY_ITEMS = 50;
 
 async function parseApiError(response: Response): Promise<string> {
   try {
     const payload = (await response.json()) as ApiErrorResponse;
-    return payload.error.message;
+    return payload.error.detail
+      ? `${payload.error.message} ${payload.error.detail}`
+      : payload.error.message;
   } catch {
-    return "Request failed.";
+    return `Request failed with HTTP ${response.status}.`;
   }
 }
 
@@ -110,6 +116,88 @@ function downloadName(image: GeneratedImage, index: number): string {
   return `${image.id || `image-${index + 1}`}.png`;
 }
 
+function historyImageDownloadName(
+  record: GenerationHistoryRecord,
+  image: GeneratedImage,
+  index: number
+): string {
+  return `${record.id}-${downloadName(image, index)}`;
+}
+
+function createHistoryId(): string {
+  if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
+    return crypto.randomUUID();
+  }
+
+  return `history-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
+
+function loadGenerationHistory(): GenerationHistoryRecord[] {
+  if (typeof window === "undefined") {
+    return [];
+  }
+
+  try {
+    const rawHistory = window.localStorage.getItem(HISTORY_STORAGE_KEY);
+    if (!rawHistory) {
+      return [];
+    }
+
+    const parsed = JSON.parse(rawHistory) as unknown;
+    if (!Array.isArray(parsed)) {
+      return [];
+    }
+
+    return parsed.filter(
+      (record): record is GenerationHistoryRecord =>
+        typeof record === "object" &&
+        record !== null &&
+        "id" in record &&
+        "parameters" in record &&
+        "images" in record &&
+        Array.isArray((record as GenerationHistoryRecord).images)
+    );
+  } catch {
+    return [];
+  }
+}
+
+function saveGenerationHistory(records: GenerationHistoryRecord[]) {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  window.localStorage.setItem(
+    HISTORY_STORAGE_KEY,
+    JSON.stringify(records.slice(0, MAX_HISTORY_ITEMS))
+  );
+}
+
+function formatMode(mode: GenerateImageMode): string {
+  return mode === "text-to-image" ? "Text to image" : "Image to image";
+}
+
+function formatDate(value: string): string {
+  return new Date(value).toLocaleString();
+}
+
+async function copyText(value: string): Promise<void> {
+  if (navigator.clipboard?.writeText) {
+    await navigator.clipboard.writeText(value);
+    return;
+  }
+
+  const textarea = document.createElement("textarea");
+  textarea.value = value;
+  textarea.setAttribute("readonly", "true");
+  textarea.style.position = "fixed";
+  textarea.style.opacity = "0";
+  document.body.append(textarea);
+  textarea.select();
+  document.execCommand("copy");
+  textarea.remove();
+}
+
 function readFileAsDataUrl(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -138,6 +226,9 @@ export function App() {
     useState<GenerationFormState>(emptyGenerationForm);
   const [uploadedInput, setUploadedInput] = useState<UploadedInputState>();
   const [generatedImages, setGeneratedImages] = useState<GeneratedImage[]>([]);
+  const [generationHistory, setGenerationHistory] = useState<
+    GenerationHistoryRecord[]
+  >(() => loadGenerationHistory());
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [isTesting, setIsTesting] = useState(false);
@@ -149,6 +240,8 @@ export function App() {
   const [uploadError, setUploadError] = useState<string>();
   const [generationMessage, setGenerationMessage] = useState<string>();
   const [generationError, setGenerationError] = useState<string>();
+  const [historyMessage, setHistoryMessage] = useState<string>();
+  const [historyError, setHistoryError] = useState<string>();
   const [message, setMessage] = useState<string>();
   const [error, setError] = useState<string>();
 
@@ -243,6 +336,10 @@ export function App() {
   useEffect(() => {
     void loadProviders();
   }, []);
+
+  useEffect(() => {
+    saveGenerationHistory(generationHistory);
+  }, [generationHistory]);
 
   useEffect(() => {
     void loadModels(selectedProvider?.id);
@@ -465,6 +562,123 @@ export function App() {
     setError(undefined);
   }
 
+  function addGenerationHistoryRecord(
+    images: GeneratedImage[],
+    generatedAt: string,
+    seed: number | undefined,
+    trimmedPrompt: string
+  ) {
+    if (!selectedProvider || !selectedModel) {
+      return;
+    }
+
+    const record: GenerationHistoryRecord = {
+      id: createHistoryId(),
+      createdAt: generatedAt,
+      providerId: selectedProvider.id,
+      providerName: selectedProvider.name,
+      modelId: selectedModel.id,
+      modelName: selectedModel.name,
+      parameters: {
+        mode: activeMode,
+        prompt: trimmedPrompt,
+        negativePrompt: generationForm.negativePrompt.trim() || undefined,
+        ratio: generationForm.ratio,
+        quality: generationForm.quality,
+        count: generationForm.count,
+        seed,
+        strength: activeMode === "image-to-image" ? generationForm.strength : undefined,
+        inputImage:
+          activeMode === "image-to-image" && uploadedInput
+            ? {
+                fileName: uploadedInput.fileName,
+                mimeType: uploadedInput.mimeType,
+                sizeBytes: uploadedInput.sizeBytes
+              }
+            : undefined
+      },
+      images
+    };
+
+    setGenerationHistory((current) => [record, ...current].slice(0, MAX_HISTORY_ITEMS));
+    setHistoryMessage("Generation saved to history.");
+    setHistoryError(undefined);
+  }
+
+  function viewHistoryRecord(record: GenerationHistoryRecord) {
+    setGeneratedImages(record.images);
+    setGenerationMessage(`Viewing ${record.images.length} saved image(s).`);
+    setGenerationError(undefined);
+    setHistoryMessage(`Viewing results from ${formatDate(record.createdAt)}.`);
+    setHistoryError(undefined);
+  }
+
+  function reuseHistoryRecord(record: GenerationHistoryRecord) {
+    const matchingProvider = providers.find(
+      (provider) => provider.id === record.providerId
+    );
+
+    if (matchingProvider) {
+      editProvider(matchingProvider);
+    }
+
+    setActiveMode(record.parameters.mode);
+    setSelectedModelId(record.modelId);
+    setGenerationForm({
+      prompt: record.parameters.prompt,
+      negativePrompt: record.parameters.negativePrompt ?? "",
+      ratio: record.parameters.ratio ?? "1:1",
+      quality: record.parameters.quality ?? "standard",
+      count: record.parameters.count ?? 1,
+      seed: record.parameters.seed === undefined ? "" : String(record.parameters.seed),
+      strength: record.parameters.strength ?? 0.5
+    });
+    setGeneratedImages(record.images);
+    setGenerationError(undefined);
+    setUploadError(undefined);
+
+    if (record.parameters.mode === "image-to-image") {
+      setUploadedInput(undefined);
+      setGenerationMessage(
+        "Parameters reused. Upload the reference image again before regenerating."
+      );
+    } else {
+      setGenerationMessage("Parameters reused.");
+    }
+
+    setHistoryMessage(
+      matchingProvider
+        ? "History parameters copied into the generation form."
+        : "History parameters copied, but the original provider is no longer saved."
+    );
+    setHistoryError(undefined);
+  }
+
+  function deleteHistoryRecord(recordId: string) {
+    setGenerationHistory((current) =>
+      current.filter((record) => record.id !== recordId)
+    );
+    setHistoryMessage("History item deleted.");
+    setHistoryError(undefined);
+  }
+
+  function clearHistory() {
+    setGenerationHistory([]);
+    setHistoryMessage("History cleared.");
+    setHistoryError(undefined);
+  }
+
+  async function copyImageUrl(url: string) {
+    try {
+      await copyText(url);
+      setHistoryMessage("Image URL copied.");
+      setHistoryError(undefined);
+    } catch {
+      setHistoryError("Unable to copy the image URL in this browser.");
+      setHistoryMessage(undefined);
+    }
+  }
+
   async function generateImages(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setIsGenerating(true);
@@ -534,6 +748,12 @@ export function App() {
 
       setGeneratedImages(result.images);
       setGenerationMessage(`Generated ${result.images.length} image(s).`);
+      addGenerationHistoryRecord(
+        result.images,
+        result.generatedAt,
+        seed,
+        trimmedPrompt
+      );
     } catch (generateError) {
       setGenerationError(
         generateError instanceof Error ? generateError.message : "Generation failed."
@@ -547,10 +767,10 @@ export function App() {
     <main className="app-shell">
       <header className="top-bar">
         <div>
-          <p className="eyebrow">Phase 4</p>
+          <p className="eyebrow">Phase 5</p>
           <h1>image2 Generation Workbench</h1>
         </div>
-        <span className="status-pill">Text and image-to-image MVP</span>
+        <span className="status-pill">Generation history and polish</span>
       </header>
 
       <section className="workspace" aria-labelledby="provider-title">
@@ -603,10 +823,26 @@ export function App() {
           ) : null}
 
           <div className="button-row">
-            <button disabled={isSaving} type="submit">
+            <button
+              disabled={
+                isSaving ||
+                !form.name.trim() ||
+                !form.baseUrl.trim() ||
+                (!form.id && !form.apiKey.trim())
+              }
+              type="submit"
+            >
               {isSaving ? "Saving..." : "Save provider"}
             </button>
-            <button disabled={isTesting} onClick={testProvider} type="button">
+            <button
+              disabled={
+                isTesting ||
+                isSaving ||
+                (form.id ? false : !form.baseUrl.trim() || !form.apiKey.trim())
+              }
+              onClick={testProvider}
+              type="button"
+            >
               {isTesting ? "Testing..." : "Test connection"}
             </button>
             {form.id ? (
@@ -619,7 +855,12 @@ export function App() {
                 Delete
               </button>
             ) : null}
-            <button className="secondary" onClick={resetForm} type="button">
+            <button
+              className="secondary"
+              disabled={isSaving || isTesting}
+              onClick={resetForm}
+              type="button"
+            >
               New
             </button>
           </div>
@@ -638,7 +879,7 @@ export function App() {
 
           {!isLoading && providers.length === 0 ? (
             <p className="empty-state">
-              Add an API provider before model discovery or generation phases.
+              Add an API provider to unlock model discovery and generation.
             </p>
           ) : null}
 
@@ -997,6 +1238,13 @@ export function App() {
                         <a download={downloadName(image, index)} href={image.url}>
                           Download
                         </a>
+                        <button
+                          className="link-button"
+                          onClick={() => void copyImageUrl(image.url ?? "")}
+                          type="button"
+                        >
+                          Copy URL
+                        </button>
                       </>
                     ) : null}
                   </div>
@@ -1005,6 +1253,127 @@ export function App() {
             </div>
           ) : null}
         </section>
+      </section>
+
+      <section className="history-panel" aria-labelledby="history-title">
+        <div className="history-header">
+          <div className="section-heading">
+            <p className="eyebrow">History</p>
+            <h2 id="history-title">Generation history</h2>
+          </div>
+          <button
+            className="secondary"
+            disabled={generationHistory.length === 0}
+            onClick={clearHistory}
+            type="button"
+          >
+            Clear history
+          </button>
+        </div>
+
+        {historyMessage ? <p className="notice success">{historyMessage}</p> : null}
+        {historyError ? <p className="notice error">{historyError}</p> : null}
+
+        {generationHistory.length === 0 ? (
+          <p className="empty-state">
+            Successful generations will be saved here on this device.
+          </p>
+        ) : null}
+
+        {generationHistory.length > 0 ? (
+          <div className="history-list">
+            {generationHistory.map((record) => (
+              <article className="history-card" key={record.id}>
+                <div className="history-summary">
+                  {record.images[0]?.url ? (
+                    <img
+                      alt=""
+                      className="history-thumb"
+                      src={record.images[0].url}
+                    />
+                  ) : (
+                    <div className="history-thumb placeholder">No URL</div>
+                  )}
+                  <div>
+                    <h3>{record.parameters.prompt}</h3>
+                    <p>
+                      {formatMode(record.parameters.mode)} - {record.modelName} -{" "}
+                      {formatDate(record.createdAt)}
+                    </p>
+                    <p>
+                      Ratio {record.parameters.ratio ?? "n/a"} - Quality{" "}
+                      {record.parameters.quality ?? "n/a"} - Count{" "}
+                      {record.parameters.count ?? record.images.length}
+                      {record.parameters.seed !== undefined
+                        ? ` - Seed ${record.parameters.seed}`
+                        : ""}
+                    </p>
+                    {record.parameters.inputImage ? (
+                      <p>
+                        Reference:{" "}
+                        {record.parameters.inputImage.fileName ??
+                          record.parameters.inputImage.mimeType}{" "}
+                        ({Math.ceil(record.parameters.inputImage.sizeBytes / 1024)} KB)
+                      </p>
+                    ) : null}
+                  </div>
+                </div>
+
+                <div className="history-actions">
+                  <button onClick={() => viewHistoryRecord(record)} type="button">
+                    View results
+                  </button>
+                  <button
+                    className="secondary"
+                    onClick={() => reuseHistoryRecord(record)}
+                    type="button"
+                  >
+                    Reuse parameters
+                  </button>
+                  <button
+                    className="secondary"
+                    onClick={() => deleteHistoryRecord(record.id)}
+                    type="button"
+                  >
+                    Delete
+                  </button>
+                </div>
+
+                <div className="history-images">
+                  {record.images.map((image, index) => (
+                    <div className="history-image-row" key={`${record.id}-${image.id}`}>
+                      <span>Image {index + 1}</span>
+                      <div className="image-actions">
+                        {image.url ? (
+                          <>
+                            <a href={image.url} rel="noreferrer" target="_blank">
+                              Preview
+                            </a>
+                            <a
+                              download={historyImageDownloadName(record, image, index)}
+                              href={image.url}
+                            >
+                              Download
+                            </a>
+                            <button
+                              className="link-button"
+                              onClick={() => void copyImageUrl(image.url ?? "")}
+                              type="button"
+                            >
+                              Copy URL
+                            </button>
+                          </>
+                        ) : (
+                          <span className="muted-text">No image URL returned</span>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </article>
+            ))}
+          </div>
+        ) : null}
       </section>
     </main>
   );

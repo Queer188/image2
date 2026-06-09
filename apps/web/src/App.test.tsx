@@ -30,10 +30,11 @@ describe("App", () => {
   });
 
   afterEach(() => {
+    window.localStorage.clear();
     vi.unstubAllGlobals();
   });
 
-  it("renders the phase 4 generation empty state", async () => {
+  it("renders the phase 5 generation empty state", async () => {
     vi.mocked(fetch).mockResolvedValueOnce(
       await jsonResponse({
         providers: []
@@ -46,6 +47,7 @@ describe("App", () => {
       await screen.findByRole("heading", { name: /image2 generation workbench/i })
     ).toBeInTheDocument();
     expect(screen.getByText(/add an api provider/i)).toBeInTheDocument();
+    expect(screen.getByText(/successful generations will be saved/i)).toBeInTheDocument();
   });
 
   it("saves a provider without rendering the API key", async () => {
@@ -251,9 +253,16 @@ describe("App", () => {
       "src",
       "https://cdn.example.com/image-1.png"
     );
-    expect(screen.getByRole("link", { name: "Download" })).toHaveAttribute(
+    expect(screen.getAllByRole("link", { name: "Download" })[0]).toHaveAttribute(
       "download",
       "image-1.png"
+    );
+    expect(screen.getByRole("heading", { name: "A quiet studio desk" })).toBeInTheDocument();
+    expect(window.localStorage.getItem("image2:generation-history:v1")).not.toContain(
+      "sk-test-secret-value"
+    );
+    expect(window.localStorage.getItem("image2:generation-history:v1")).not.toContain(
+      "apiKey"
     );
     expect(fetch).toHaveBeenCalledWith(
       "/api/images/generate",
@@ -391,5 +400,80 @@ describe("App", () => {
       })
     );
     expect(generateCall?.[1]?.body?.toString()).not.toContain("data:image/png");
+    expect(window.localStorage.getItem("image2:generation-history:v1")).not.toContain(
+      "data:image/png"
+    );
+  });
+
+  it("reuses and deletes a saved text-to-image history item", async () => {
+    vi.mocked(fetch).mockImplementation(async (input) => {
+      const url = input.toString();
+
+      if (url === "/api/providers") {
+        return jsonResponse({
+          providers: [provider]
+        });
+      }
+
+      if (url === "/api/models/list") {
+        return jsonResponse({
+          models: [
+            {
+              id: "gpt-image-1",
+              name: "GPT Image",
+              providerId: provider.id,
+              capabilities: ["text-to-image"]
+            }
+          ],
+          fetchedAt: "2026-06-09T00:00:02.000Z"
+        });
+      }
+
+      if (url === "/api/images/generate") {
+        return jsonResponse({
+          images: [
+            {
+              id: "image-1",
+              url: "https://cdn.example.com/image-1.png",
+              metadata: {
+                index: 0
+              }
+            }
+          ],
+          generatedAt: "2026-06-09T00:00:03.000Z"
+        });
+      }
+
+      throw new Error(`Unexpected fetch ${url}`);
+    });
+
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: /local provider/i }));
+    await screen.findAllByText("GPT Image");
+    fireEvent.change(screen.getByLabelText("Prompt"), {
+      target: { value: "A reusable prompt" }
+    });
+    fireEvent.change(screen.getByLabelText(/seed/i), {
+      target: { value: "77" }
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Generate" }));
+
+    expect(await screen.findByRole("heading", { name: "A reusable prompt" }))
+      .toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText("Prompt"), {
+      target: { value: "Changed prompt" }
+    });
+    fireEvent.click(screen.getByRole("button", { name: /reuse parameters/i }));
+
+    expect(screen.getByLabelText("Prompt")).toHaveValue("A reusable prompt");
+    expect(screen.getByLabelText(/seed/i)).toHaveValue(77);
+
+    const deleteButtons = screen.getAllByRole("button", { name: "Delete" });
+    fireEvent.click(deleteButtons[deleteButtons.length - 1]);
+    expect(screen.queryByRole("heading", { name: "A reusable prompt" }))
+      .not.toBeInTheDocument();
+    expect(screen.getByText(/successful generations will be saved/i)).toBeInTheDocument();
   });
 });

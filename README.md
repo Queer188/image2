@@ -1,10 +1,10 @@
 # image2 Tool
 
-image2 Tool is a local-first image generation workbench. Phase 4 supports API provider configuration, connection testing, model discovery, text-to-image generation, and image-to-image generation through a React web app and Fastify API server.
+image2 Tool is a local-first image generation workbench. Phase 5 supports API provider configuration, connection testing, model discovery, text-to-image generation, image-to-image generation, and local generation history through a React web app and Fastify API server.
 
 ## Current Phase
 
-Phase 4: image-to-image MVP.
+Phase 5: generation history and experience polish.
 
 Included:
 
@@ -23,14 +23,18 @@ Included:
 - Reference image upload for image-to-image generation
 - Upload validation for PNG, JPEG, and WebP files up to 5 MB
 - Image-to-image form for model, prompt, negative prompt, strength, ratio, quality, count, and seed
+- Local generation history for text-to-image and image-to-image results
+- History actions to view results, reuse parameters, delete one item, clear all items, download images, and copy image URLs when returned
+- Polished empty, loading, error, and disabled button states
 - API Key redaction in responses and logs
 - lint, test, build, and dev scripts
 
 Not included yet:
 
-- Complex history management
+- Account sync or server-side history
+- Long-term storage for uploaded reference image binaries
 
-Provider data is stored in server memory for this phase. API Keys are not returned to the browser and are not written to durable storage in cleartext.
+Provider data is stored in server memory for this phase. API Keys are not returned to the browser and are not written to durable storage in cleartext. Generation history is stored in browser `localStorage`; it stores generation parameters, provider/model names, and generated image metadata/URLs, but not API Keys or uploaded reference image binaries.
 
 ## Requirements
 
@@ -215,3 +219,18 @@ curl -X POST http://localhost:3001/api/images/generate \
 ```
 
 The server resolves the API Key and uploaded image server-side. image2-compatible providers receive a JSON payload with common `image` / `input_image` fields. If that endpoint is unavailable, the adapter falls back to OpenAI-compatible multipart `images/edits` requests.
+
+## Generation History
+
+Successful text-to-image and image-to-image requests are saved locally in the browser. Each history item includes the generated images, timestamp, provider/model names, and reusable generation parameters.
+
+History supports:
+
+- View saved generated results in the gallery
+- Reuse prompt, negative prompt, model, ratio, quality, count, seed, and strength
+- Delete a single history item
+- Clear all local history
+- Download generated images
+- Copy a generated image URL when the provider returned one
+
+For image-to-image history, the uploaded reference image bytes are not saved. Reusing an image-to-image item restores the parameters and asks the user to upload the reference image again before regenerating.
