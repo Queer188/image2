@@ -34,7 +34,7 @@ describe("App", () => {
     vi.unstubAllGlobals();
   });
 
-  it("renders the localized generation empty state", async () => {
+  it("renders the localized workbench empty states and mobile tabs", async () => {
     vi.mocked(fetch).mockResolvedValueOnce(
       await jsonResponse({
         providers: []
@@ -50,8 +50,14 @@ describe("App", () => {
     expect(
       await screen.findByRole("heading", { name: /image2 生图工作台/i })
     ).toBeInTheDocument();
-    expect(screen.getByText(/先添加一个 API 接口源/)).toBeInTheDocument();
-    expect(screen.getByText(/成功生成的记录会保存在这里/)).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "接口源" })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "生成" })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "结果" })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "历史" })).toBeInTheDocument();
+    expect(screen.getByText(/还没有接口源/)).toBeInTheDocument();
+    expect(screen.getByText(/还没有选择接口源/)).toBeInTheDocument();
+    expect(screen.getByText(/还没有生成结果/)).toBeInTheDocument();
+    expect(screen.getByText(/还没有历史记录/)).toBeInTheDocument();
   });
 
   it("saves a provider without rendering the API key", async () => {
@@ -544,7 +550,7 @@ describe("App", () => {
       expect(screen.queryByRole("heading", { name: "A reusable prompt" }))
         .not.toBeInTheDocument();
     });
-    expect(screen.getByText(/成功生成的记录会保存在这里/)).toBeInTheDocument();
+    expect(screen.getByText(/还没有历史记录/)).toBeInTheDocument();
   });
 
   it("migrates existing localStorage history to server history", async () => {
