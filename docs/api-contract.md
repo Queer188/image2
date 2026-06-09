@@ -1,8 +1,8 @@
 # API Contract
 
-## Phase 3 Scope
+## Phase 4 Scope
 
-Phase 3 defines provider configuration, connection testing, model discovery, and text-to-image generation. Image-to-image, uploads, and history are intentionally out of scope.
+Phase 4 defines provider configuration, connection testing, model discovery, text-to-image generation, reference image upload, and image-to-image generation. Complex history is intentionally out of scope.
 
 ## Provider Types
 
@@ -31,6 +31,7 @@ PUT    /api/providers/:id
 DELETE /api/providers/:id
 POST   /api/providers/test
 POST   /api/models/list
+POST   /api/images/upload
 POST   /api/images/generate
 ```
 
@@ -129,6 +130,20 @@ type GenerateImageRequest = {
   inputImageId?: string;
 };
 
+type UploadImageRequest = {
+  fileName?: string;
+  mimeType: string;
+  dataUrl: string;
+};
+
+type UploadedImageRef = {
+  id: string;
+  fileName?: string;
+  mimeType: "image/png" | "image/jpeg" | "image/webp";
+  sizeBytes: number;
+  uploadedAt: string;
+};
+
 type GeneratedImage = {
   id: string;
   url?: string;
@@ -143,9 +158,15 @@ type GenerateImageResponse = {
   images: GeneratedImage[];
   generatedAt: string;
 };
+
+type UploadImageResponse = {
+  image: UploadedImageRef;
+};
 ```
 
-Phase 3 only accepts `mode: "text-to-image"` at `POST /api/images/generate`. `image-to-image` fields are reserved for Phase 4.
+`POST /api/images/upload` accepts base64 data URLs for PNG, JPEG, and WebP images up to 5 MB. The response returns only metadata and an `id`; it does not echo uploaded image bytes.
+
+`POST /api/images/generate` accepts `mode: "text-to-image"` or `mode: "image-to-image"`. Image-to-image requests must include `inputImageId` and `strength` between `0` and `1`.
 
 ## Errors
 

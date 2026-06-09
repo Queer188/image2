@@ -236,6 +236,68 @@ select:focus {
   gap: 16px;
 }
 
+.mode-tabs {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.mode-tabs button {
+  border-color: #c2d0d7;
+  background: #ffffff;
+  color: #25323b;
+}
+
+.mode-tabs button.selected {
+  border-color: #1f737a;
+  background: #1f737a;
+  color: #ffffff;
+}
+
+.upload-panel {
+  display: grid;
+  gap: 12px;
+  border: 1px solid #d6e0e5;
+  border-radius: 8px;
+  padding: 14px;
+  background: #f8fafb;
+}
+
+.upload-preview {
+  display: grid;
+  grid-template-columns: 84px minmax(0, 1fr);
+  gap: 12px;
+  align-items: center;
+}
+
+.upload-preview img {
+  width: 84px;
+  aspect-ratio: 1 / 1;
+  border: 1px solid #cbd8de;
+  border-radius: 6px;
+  object-fit: cover;
+  background: #e7eef2;
+}
+
+.upload-preview p {
+  margin: 0;
+  min-width: 0;
+}
+
+.upload-preview strong,
+.upload-preview span {
+  display: block;
+  overflow-wrap: anywhere;
+}
+
+.upload-preview span,
+.control-value {
+  margin-top: 4px;
+  color: #5a6973;
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
 .generation-controls {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));

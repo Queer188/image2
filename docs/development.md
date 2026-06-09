@@ -26,7 +26,7 @@ npm test
 npm run build
 ```
 
-## Phase 3 Notes
+## Phase 4 Notes
 
 - The web app proxies `/api` and `/health` to the local Fastify server during Vite development.
 - Provider configuration is stored in server memory. Restarting the server clears providers and API keys.
@@ -36,6 +36,9 @@ npm run build
 - The provider adapter calls the provider's common `/models` endpoint and supports OpenAI-compatible `data`, image2-compatible `models`, and generic `items` arrays.
 - Models without detected image capabilities are filtered from the UI response.
 - Text-to-image generation calls `POST /api/images/generate` with a saved `providerId`, selected model, prompt, negative prompt, ratio, quality, count, and optional seed.
-- The provider adapter posts to the provider's common `/images/generations` endpoint.
+- Reference image upload calls `POST /api/images/upload` with a PNG, JPEG, or WebP data URL up to 5 MB.
+- Upload responses return only metadata and an image id; uploaded bytes are held in server memory.
+- Image-to-image generation calls `POST /api/images/generate` with `mode: "image-to-image"`, `inputImageId`, prompt, negative prompt, strength, ratio, quality, count, and optional seed.
+- The provider adapter posts text-to-image requests to the provider's common `/images/generations` endpoint.
+- Image-to-image requests first use image2-compatible JSON at `/images/generations` and fall back to OpenAI-compatible multipart `/images/edits` when JSON edits are unavailable.
 - OpenAI-compatible `data` responses and image2-compatible `images` responses are normalized to shared `GeneratedImage` objects.
-- Phase 3 rejects `image-to-image` requests at the backend route.

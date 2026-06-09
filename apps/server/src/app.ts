@@ -13,7 +13,11 @@ export function buildServer() {
         "req.headers.authorization",
         "headers.authorization",
         "body.apiKey",
-        "request.body.apiKey"
+        "request.body.apiKey",
+        "body.dataUrl",
+        "request.body.dataUrl",
+        "body.inputImage.dataUrl",
+        "request.body.inputImage.dataUrl"
       ]
     }
   });

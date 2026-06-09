@@ -1,10 +1,10 @@
 # image2 Tool
 
-image2 Tool is a local-first image generation workbench. Phase 3 supports API provider configuration, connection testing, model discovery, and text-to-image generation through a React web app and Fastify API server.
+image2 Tool is a local-first image generation workbench. Phase 4 supports API provider configuration, connection testing, model discovery, text-to-image generation, and image-to-image generation through a React web app and Fastify API server.
 
 ## Current Phase
 
-Phase 3: text-to-image MVP.
+Phase 4: image-to-image MVP.
 
 Included:
 
@@ -20,12 +20,14 @@ Included:
 - Text-to-image form for model, prompt, negative prompt, ratio, quality, count, and seed
 - Generation loading, success, and error states
 - Result gallery with image preview and download links
+- Reference image upload for image-to-image generation
+- Upload validation for PNG, JPEG, and WebP files up to 5 MB
+- Image-to-image form for model, prompt, negative prompt, strength, ratio, quality, count, and seed
 - API Key redaction in responses and logs
 - lint, test, build, and dev scripts
 
 Not included yet:
 
-- Image-to-image generation
 - Complex history management
 
 Provider data is stored in server memory for this phase. API Keys are not returned to the browser and are not written to durable storage in cleartext.
@@ -163,3 +165,53 @@ Expected response:
 ```
 
 The browser still sends only the saved `providerId`, selected model, and generation parameters. The API Key is resolved server-side and is not returned in responses.
+
+## Image-to-Image API
+
+Upload a PNG, JPEG, or WebP reference image before generating:
+
+```bash
+curl -X POST http://localhost:3001/api/images/upload \
+  -H "content-type: application/json" \
+  -d '{
+    "fileName":"reference.png",
+    "mimeType":"image/png",
+    "dataUrl":"data:image/png;base64,..."
+  }'
+```
+
+Expected response:
+
+```json
+{
+  "image": {
+    "id": "upload-id",
+    "fileName": "reference.png",
+    "mimeType": "image/png",
+    "sizeBytes": 1024,
+    "uploadedAt": "2026-06-09T00:00:00.000Z"
+  }
+}
+```
+
+The upload response does not return the image bytes. Generate from the uploaded image id:
+
+```bash
+curl -X POST http://localhost:3001/api/images/generate \
+  -H "content-type: application/json" \
+  -d '{
+    "providerId":"provider-id",
+    "modelId":"image-edit-pro",
+    "mode":"image-to-image",
+    "prompt":"Keep the composition and change the material",
+    "negativePrompt":"blur",
+    "inputImageId":"upload-id",
+    "strength":0.6,
+    "ratio":"1:1",
+    "quality":"standard",
+    "count":1,
+    "seed":42
+  }'
+```
+
+The server resolves the API Key and uploaded image server-side. image2-compatible providers receive a JSON payload with common `image` / `input_image` fields. If that endpoint is unavailable, the adapter falls back to OpenAI-compatible multipart `images/edits` requests.

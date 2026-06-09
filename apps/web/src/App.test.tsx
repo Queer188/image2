@@ -33,7 +33,7 @@ describe("App", () => {
     vi.unstubAllGlobals();
   });
 
-  it("renders the phase 3 text-to-image empty state", async () => {
+  it("renders the phase 4 generation empty state", async () => {
     vi.mocked(fetch).mockResolvedValueOnce(
       await jsonResponse({
         providers: []
@@ -43,7 +43,7 @@ describe("App", () => {
     render(<App />);
 
     expect(
-      await screen.findByRole("heading", { name: /image2 text to image/i })
+      await screen.findByRole("heading", { name: /image2 generation workbench/i })
     ).toBeInTheDocument();
     expect(screen.getByText(/add an api provider/i)).toBeInTheDocument();
   });
@@ -275,5 +275,121 @@ describe("App", () => {
     expect(JSON.stringify(vi.mocked(fetch).mock.calls)).not.toContain(
       "sk-test-secret-value"
     );
+  });
+
+  it("uploads a reference image and generates image-to-image results", async () => {
+    vi.mocked(fetch).mockImplementation(async (input) => {
+      const url = input.toString();
+
+      if (url === "/api/providers") {
+        return jsonResponse({
+          providers: [provider]
+        });
+      }
+
+      if (url === "/api/models/list") {
+        return jsonResponse({
+          models: [
+            {
+              id: "gpt-image-1",
+              name: "GPT Image",
+              providerId: provider.id,
+              capabilities: ["text-to-image"]
+            },
+            {
+              id: "image-edit-pro",
+              name: "Image Edit Pro",
+              providerId: provider.id,
+              capabilities: ["image-to-image"]
+            }
+          ],
+          fetchedAt: "2026-06-09T00:00:02.000Z"
+        });
+      }
+
+      if (url === "/api/images/upload") {
+        return jsonResponse(
+          {
+            image: {
+              id: "upload-1",
+              fileName: "reference.png",
+              mimeType: "image/png",
+              sizeBytes: 5,
+              uploadedAt: "2026-06-09T00:00:03.000Z"
+            }
+          },
+          { status: 201 }
+        );
+      }
+
+      if (url === "/api/images/generate") {
+        return jsonResponse({
+          images: [
+            {
+              id: "edited-1",
+              url: "https://cdn.example.com/edited-1.png",
+              metadata: {
+                index: 0
+              }
+            }
+          ],
+          generatedAt: "2026-06-09T00:00:04.000Z"
+        });
+      }
+
+      throw new Error(`Unexpected fetch ${url}`);
+    });
+
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: /local provider/i }));
+    await screen.findAllByText("Image Edit Pro");
+    fireEvent.click(screen.getByRole("tab", { name: /image/i }));
+
+    const file = new File(["hello"], "reference.png", { type: "image/png" });
+    fireEvent.change(screen.getByLabelText(/reference image/i), {
+      target: {
+        files: [file]
+      }
+    });
+
+    expect(await screen.findByAltText(/uploaded reference/i)).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText("Prompt"), {
+      target: { value: "Change the wall color" }
+    });
+    fireEvent.change(screen.getByLabelText(/negative prompt/i), {
+      target: { value: "blur" }
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Generate" }));
+
+    expect(await screen.findByText(/generated 1 image/i)).toBeInTheDocument();
+    expect(screen.getByAltText(/generated result 1/i)).toHaveAttribute(
+      "src",
+      "https://cdn.example.com/edited-1.png"
+    );
+
+    const generateCall = vi
+      .mocked(fetch)
+      .mock.calls.find(([url]) => url.toString() === "/api/images/generate");
+    expect(generateCall?.[1]).toEqual(
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({
+          providerId: "provider-1",
+          modelId: "image-edit-pro",
+          mode: "image-to-image",
+          prompt: "Change the wall color",
+          negativePrompt: "blur",
+          ratio: "1:1",
+          quality: "standard",
+          count: 1,
+          seed: undefined,
+          strength: 0.5,
+          inputImageId: "upload-1"
+        })
+      })
+    );
+    expect(generateCall?.[1]?.body?.toString()).not.toContain("data:image/png");
   });
 });

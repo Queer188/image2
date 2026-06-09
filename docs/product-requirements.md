@@ -1,8 +1,8 @@
 # Product Requirements
 
-## Phase 3: Text-to-Image MVP
+## Phase 4: Image-to-Image MVP
 
-The current workflow lets a user configure one or more image API providers, test whether a provider is reachable, fetch image-capable models, and generate images from text prompts.
+The current workflow lets a user configure one or more image API providers, test whether a provider is reachable, fetch image-capable models, generate images from text prompts, and generate images from an uploaded reference image.
 
 ## User Flow
 
@@ -17,13 +17,16 @@ The current workflow lets a user configure one or more image API providers, test
 9. The app fetches available image models from the provider.
 10. User can refresh the model list and select a model.
 11. Loading, empty, and error states are shown without clearing provider inputs.
-12. User enters a positive prompt and optional negative prompt.
-13. User configures ratio, quality, count, and optional seed.
-14. User submits a text-to-image generation request.
-15. The app shows generating, success, or failure state.
-16. Successful results appear in a gallery with preview and download actions.
+12. User chooses text-to-image or image-to-image mode.
+13. For text-to-image, user enters a positive prompt and optional negative prompt.
+14. For image-to-image, user uploads a PNG, JPEG, or WebP reference image and sees a thumbnail.
+15. User configures strength for image-to-image.
+16. User configures ratio, quality, count, and optional seed.
+17. User submits the generation request.
+18. The app shows uploading, generating, success, or failure state.
+19. Successful results appear in a gallery with preview and download actions.
 
-## Phase 3 Acceptance
+## Phase 4 Acceptance
 
 - User can add, edit, delete, and list providers.
 - User can test a provider before or after saving.
@@ -33,6 +36,9 @@ The current workflow lets a user configure one or more image API providers, test
 - Model rows show `text-to-image` and `image-to-image` capability tags when detected.
 - Model list loading, refresh, empty, and error states are visible.
 - Text-to-image form includes model, prompt, negative prompt, ratio, quality, count, and optional seed.
+- Image-to-image form includes reference image upload, model, prompt, negative prompt, strength, ratio, quality, count, and optional seed.
+- Upload validation allows only PNG, JPEG, and WebP images up to 5 MB.
+- Upload errors are clear and do not clear the generation form.
 - Generation preserves form input on failure.
 - Generated images are previewable and downloadable.
-- Image-to-image, uploads, and complex history controls are not implemented in this phase.
+- Complex history controls are not implemented in this phase.
