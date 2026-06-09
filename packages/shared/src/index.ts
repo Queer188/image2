@@ -34,6 +34,32 @@ export type ImageModel = {
   raw?: unknown;
 };
 
+export type GenerateImageMode = "text-to-image" | "image-to-image";
+
+export type GenerateImageRequest = {
+  providerId: string;
+  modelId: string;
+  mode: GenerateImageMode;
+  prompt: string;
+  negativePrompt?: string;
+  ratio?: string;
+  quality?: "standard" | "hd" | "ultra" | string;
+  count?: number;
+  seed?: number;
+  strength?: number;
+  inputImageId?: string;
+};
+
+export type GeneratedImage = {
+  id: string;
+  url?: string;
+  localPath?: string;
+  width?: number;
+  height?: number;
+  seed?: number;
+  metadata: Record<string, unknown>;
+};
+
 export type CreateProviderRequest = {
   name: string;
   baseUrl: string;
@@ -78,11 +104,17 @@ export type ModelListResponse = {
   fetchedAt: string;
 };
 
+export type GenerateImageResponse = {
+  images: GeneratedImage[];
+  generatedAt: string;
+};
+
 export type ApiErrorCode =
   | "BAD_REQUEST"
   | "PROVIDER_NOT_FOUND"
   | "PROVIDER_AUTH_FAILED"
   | "PROVIDER_CONNECTION_FAILED"
+  | "PROVIDER_GENERATION_FAILED"
   | "PROVIDER_MODEL_LIST_FAILED"
   | "PROVIDER_URL_BLOCKED"
   | "INTERNAL_ERROR";

@@ -2,6 +2,8 @@ import { useEffect, useMemo, useState } from "react";
 import type { FormEvent } from "react";
 import type {
   ApiErrorResponse,
+  GeneratedImage,
+  GenerateImageResponse,
   ImageModel,
   ModelListResponse,
   ProviderConfig,
@@ -16,11 +18,32 @@ type FormState = {
   apiKey: string;
 };
 
+type GenerationFormState = {
+  prompt: string;
+  negativePrompt: string;
+  ratio: string;
+  quality: string;
+  count: number;
+  seed: string;
+};
+
 const emptyForm: FormState = {
   name: "",
   baseUrl: "",
   apiKey: ""
 };
+
+const emptyGenerationForm: GenerationFormState = {
+  prompt: "",
+  negativePrompt: "",
+  ratio: "1:1",
+  quality: "standard",
+  count: 1,
+  seed: ""
+};
+
+const ratioOptions = ["1:1", "4:3", "3:4", "16:9", "9:16"];
+const qualityOptions = ["standard", "hd", "ultra"];
 
 async function parseApiError(response: Response): Promise<string> {
   try {
@@ -55,17 +78,31 @@ function formatCapability(capability: ImageModel["capabilities"][number]): strin
   return capability === "text-to-image" ? "Text to image" : "Image to image";
 }
 
+function supportsTextToImage(model: ImageModel): boolean {
+  return model.capabilities.includes("text-to-image");
+}
+
+function downloadName(image: GeneratedImage, index: number): string {
+  return `${image.id || `image-${index + 1}`}.png`;
+}
+
 export function App() {
   const [providers, setProviders] = useState<ProviderConfig[]>([]);
   const [form, setForm] = useState<FormState>(emptyForm);
   const [models, setModels] = useState<ImageModel[]>([]);
   const [selectedModelId, setSelectedModelId] = useState("");
+  const [generationForm, setGenerationForm] =
+    useState<GenerationFormState>(emptyGenerationForm);
+  const [generatedImages, setGeneratedImages] = useState<GeneratedImage[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [isTesting, setIsTesting] = useState(false);
   const [isLoadingModels, setIsLoadingModels] = useState(false);
+  const [isGenerating, setIsGenerating] = useState(false);
   const [modelFetchedAt, setModelFetchedAt] = useState<string>();
   const [modelError, setModelError] = useState<string>();
+  const [generationMessage, setGenerationMessage] = useState<string>();
+  const [generationError, setGenerationError] = useState<string>();
   const [message, setMessage] = useState<string>();
   const [error, setError] = useState<string>();
 
@@ -76,6 +113,10 @@ export function App() {
   const selectedModel = useMemo(
     () => models.find((model) => model.id === selectedModelId),
     [models, selectedModelId]
+  );
+  const textToImageModels = useMemo(
+    () => models.filter(supportsTextToImage),
+    [models]
   );
 
   async function loadProviders(options: { preserveStatus?: boolean } = {}) {
@@ -123,9 +164,13 @@ export function App() {
       setModels(payload.models);
       setModelFetchedAt(payload.fetchedAt);
       setSelectedModelId((current) =>
-        payload.models.some((model) => model.id === current)
+        payload.models.some(
+          (model) => model.id === current && supportsTextToImage(model)
+        )
           ? current
-          : (payload.models[0]?.id ?? "")
+          : (payload.models.find(supportsTextToImage)?.id ??
+            payload.models[0]?.id ??
+            "")
       );
     } catch (loadError) {
       setModels([]);
@@ -145,6 +190,9 @@ export function App() {
 
   useEffect(() => {
     void loadModels(selectedProvider?.id);
+    setGeneratedImages([]);
+    setGenerationMessage(undefined);
+    setGenerationError(undefined);
   }, [selectedProvider?.id]);
 
   function updateField(field: keyof FormState, value: string) {
@@ -158,6 +206,16 @@ export function App() {
     setForm(emptyForm);
     setMessage(undefined);
     setError(undefined);
+  }
+
+  function updateGenerationField(
+    field: keyof GenerationFormState,
+    value: string | number
+  ) {
+    setGenerationForm((current) => ({
+      ...current,
+      [field]: value
+    }));
   }
 
   async function saveProvider(event: FormEvent<HTMLFormElement>) {
@@ -283,14 +341,79 @@ export function App() {
     setError(undefined);
   }
 
+  async function generateImages(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setIsGenerating(true);
+    setGenerationMessage(undefined);
+    setGenerationError(undefined);
+
+    if (!selectedProvider) {
+      setGenerationError("Select a provider before generating images.");
+      setIsGenerating(false);
+      return;
+    }
+
+    if (!selectedModel || !supportsTextToImage(selectedModel)) {
+      setGenerationError("Select a text-to-image model before generating.");
+      setIsGenerating(false);
+      return;
+    }
+
+    const trimmedPrompt = generationForm.prompt.trim();
+    if (!trimmedPrompt) {
+      setGenerationError("Prompt is required.");
+      setIsGenerating(false);
+      return;
+    }
+
+    const seed =
+      generationForm.seed.trim() === "" ? undefined : Number(generationForm.seed);
+    if (seed !== undefined && !Number.isInteger(seed)) {
+      setGenerationError("Seed must be an integer.");
+      setIsGenerating(false);
+      return;
+    }
+
+    try {
+      const result = await readJson<GenerateImageResponse>(
+        await fetch("/api/images/generate", {
+          method: "POST",
+          headers: {
+            "content-type": "application/json"
+          },
+          body: JSON.stringify({
+            providerId: selectedProvider.id,
+            modelId: selectedModel.id,
+            mode: "text-to-image",
+            prompt: trimmedPrompt,
+            negativePrompt: generationForm.negativePrompt.trim() || undefined,
+            ratio: generationForm.ratio,
+            quality: generationForm.quality,
+            count: generationForm.count,
+            seed
+          })
+        })
+      );
+
+      setGeneratedImages(result.images);
+      setGenerationMessage(`Generated ${result.images.length} image(s).`);
+    } catch (generateError) {
+      setGenerationError(
+        generateError instanceof Error ? generateError.message : "Generation failed."
+      );
+    } finally {
+      setIsGenerating(false);
+    }
+  }
+
   return (
     <main className="app-shell">
       <header className="top-bar">
         <div>
-          <p className="eyebrow">Phase 2</p>
-          <h1>image2 Model Discovery</h1>
+          <p className="eyebrow">Phase 3</p>
+          <h1>image2 Text to Image</h1>
         </div>
-        <span className="status-pill">Provider models only</span>
+        <span className="status-pill">Text-to-image MVP</span>
       </header>
 
       <section className="workspace" aria-labelledby="provider-title">
@@ -484,6 +607,188 @@ export function App() {
             </p>
           </>
         ) : null}
+      </section>
+
+      <section className="generation-panel" aria-labelledby="generation-title">
+        <form className="generation-form" onSubmit={generateImages}>
+          <div className="section-heading">
+            <p className="eyebrow">Text to image</p>
+            <h2 id="generation-title">Generate</h2>
+          </div>
+
+          {!selectedProvider ? (
+            <p className="empty-state">Select or save a provider before generating.</p>
+          ) : null}
+
+          {selectedProvider && textToImageModels.length === 0 ? (
+            <p className="empty-state">
+              Fetch a text-to-image model before generating.
+            </p>
+          ) : null}
+
+          <label>
+            Model
+            <select
+              disabled={textToImageModels.length === 0 || isGenerating}
+              onChange={(event) => setSelectedModelId(event.target.value)}
+              value={
+                selectedModel && supportsTextToImage(selectedModel)
+                  ? selectedModelId
+                  : ""
+              }
+            >
+              <option value="">Select model</option>
+              {textToImageModels.map((model) => (
+                <option key={model.id} value={model.id}>
+                  {model.name}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <label>
+            Prompt
+            <textarea
+              onChange={(event) => updateGenerationField("prompt", event.target.value)}
+              placeholder="Describe the image to generate"
+              required
+              rows={5}
+              value={generationForm.prompt}
+            />
+          </label>
+
+          <label>
+            Negative prompt
+            <textarea
+              onChange={(event) =>
+                updateGenerationField("negativePrompt", event.target.value)
+              }
+              placeholder="Elements to avoid"
+              rows={3}
+              value={generationForm.negativePrompt}
+            />
+          </label>
+
+          <div className="generation-controls">
+            <label>
+              Ratio
+              <select
+                onChange={(event) => updateGenerationField("ratio", event.target.value)}
+                value={generationForm.ratio}
+              >
+                {ratioOptions.map((ratio) => (
+                  <option key={ratio} value={ratio}>
+                    {ratio}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <label>
+              Quality
+              <select
+                onChange={(event) => updateGenerationField("quality", event.target.value)}
+                value={generationForm.quality}
+              >
+                {qualityOptions.map((quality) => (
+                  <option key={quality} value={quality}>
+                    {quality}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <label>
+              Count
+              <input
+                max={4}
+                min={1}
+                onChange={(event) =>
+                  updateGenerationField("count", Number(event.target.value))
+                }
+                type="number"
+                value={generationForm.count}
+              />
+            </label>
+
+            <label>
+              Seed
+              <input
+                inputMode="numeric"
+                onChange={(event) => updateGenerationField("seed", event.target.value)}
+                placeholder="Optional"
+                type="number"
+                value={generationForm.seed}
+              />
+            </label>
+          </div>
+
+          <div className="button-row">
+            <button
+              disabled={
+                isGenerating ||
+                !selectedProvider ||
+                !selectedModel ||
+                !supportsTextToImage(selectedModel) ||
+                !generationForm.prompt.trim()
+              }
+              type="submit"
+            >
+              {isGenerating ? "Generating..." : "Generate"}
+            </button>
+          </div>
+
+          {generationMessage ? (
+            <p className="notice success">{generationMessage}</p>
+          ) : null}
+          {generationError ? <p className="notice error">{generationError}</p> : null}
+        </form>
+
+        <section className="result-gallery" aria-labelledby="results-title">
+          <div className="section-heading">
+            <p className="eyebrow">Results</p>
+            <h2 id="results-title">Gallery</h2>
+          </div>
+
+          {isGenerating ? (
+            <p className="empty-state">Generating images...</p>
+          ) : null}
+
+          {!isGenerating && generatedImages.length === 0 ? (
+            <p className="empty-state">Generated images will appear here.</p>
+          ) : null}
+
+          {generatedImages.length > 0 ? (
+            <div className="gallery-grid">
+              {generatedImages.map((image, index) => (
+                <article className="image-card" key={image.id}>
+                  {image.url ? (
+                    <a href={image.url} rel="noreferrer" target="_blank">
+                      <img
+                        alt={`Generated result ${index + 1}`}
+                        src={image.url}
+                      />
+                    </a>
+                  ) : (
+                    <div className="image-placeholder">No preview URL</div>
+                  )}
+                  <div className="image-actions">
+                    {image.url ? (
+                      <>
+                        <a href={image.url} rel="noreferrer" target="_blank">
+                          Preview
+                        </a>
+                        <a download={downloadName(image, index)} href={image.url}>
+                          Download
+                        </a>
+                      </>
+                    ) : null}
+                  </div>
+                </article>
+              ))}
+            </div>
+          ) : null}
+        </section>
       </section>
     </main>
   );

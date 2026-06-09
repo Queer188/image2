@@ -1,8 +1,8 @@
 # API Contract
 
-## Phase 2 Scope
+## Phase 3 Scope
 
-Phase 2 defines provider configuration, connection testing, and model discovery. Image generation, uploads, and history are intentionally out of scope.
+Phase 3 defines provider configuration, connection testing, model discovery, and text-to-image generation. Image-to-image, uploads, and history are intentionally out of scope.
 
 ## Provider Types
 
@@ -31,6 +31,7 @@ PUT    /api/providers/:id
 DELETE /api/providers/:id
 POST   /api/providers/test
 POST   /api/models/list
+POST   /api/images/generate
 ```
 
 Create request:
@@ -108,6 +109,43 @@ type ModelListResponse = {
 ```
 
 The client never sends or receives the plaintext API Key for model discovery. The server resolves `providerId` to a runtime config and calls the adapter.
+
+## Generation Types
+
+```ts
+type GenerateImageMode = "text-to-image" | "image-to-image";
+
+type GenerateImageRequest = {
+  providerId: string;
+  modelId: string;
+  mode: GenerateImageMode;
+  prompt: string;
+  negativePrompt?: string;
+  ratio?: string;
+  quality?: "standard" | "hd" | "ultra" | string;
+  count?: number;
+  seed?: number;
+  strength?: number;
+  inputImageId?: string;
+};
+
+type GeneratedImage = {
+  id: string;
+  url?: string;
+  localPath?: string;
+  width?: number;
+  height?: number;
+  seed?: number;
+  metadata: Record<string, unknown>;
+};
+
+type GenerateImageResponse = {
+  images: GeneratedImage[];
+  generatedAt: string;
+};
+```
+
+Phase 3 only accepts `mode: "text-to-image"` at `POST /api/images/generate`. `image-to-image` fields are reserved for Phase 4.
 
 ## Errors
 
