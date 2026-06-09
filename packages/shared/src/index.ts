@@ -22,6 +22,18 @@ export type ProviderRuntimeConfig = {
   apiKey: string;
 };
 
+export type ImageModelCapability = "text-to-image" | "image-to-image";
+
+export type ImageModel = {
+  id: string;
+  name: string;
+  providerId: string;
+  capabilities: ImageModelCapability[];
+  supportedRatios?: string[];
+  supportedQualities?: string[];
+  raw?: unknown;
+};
+
 export type CreateProviderRequest = {
   name: string;
   baseUrl: string;
@@ -57,11 +69,21 @@ export type ProviderTestResponse = {
   statusCode?: number;
 };
 
+export type ModelListRequest = {
+  providerId: string;
+};
+
+export type ModelListResponse = {
+  models: ImageModel[];
+  fetchedAt: string;
+};
+
 export type ApiErrorCode =
   | "BAD_REQUEST"
   | "PROVIDER_NOT_FOUND"
   | "PROVIDER_AUTH_FAILED"
   | "PROVIDER_CONNECTION_FAILED"
+  | "PROVIDER_MODEL_LIST_FAILED"
   | "PROVIDER_URL_BLOCKED"
   | "INTERNAL_ERROR";
 

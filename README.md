@@ -1,10 +1,10 @@
 # image2 Tool
 
-image2 Tool is a local-first image generation workbench. Phase 1 supports API provider configuration and connection testing through a React web app and Fastify API server.
+image2 Tool is a local-first image generation workbench. Phase 2 supports API provider configuration, connection testing, and model discovery through a React web app and Fastify API server.
 
 ## Current Phase
 
-Phase 1: provider configuration and connection testing.
+Phase 2: model discovery.
 
 Included:
 
@@ -13,12 +13,14 @@ Included:
 - Fastify backend with `GET /health` and provider configuration APIs
 - Shared package contracts for provider configuration and API errors
 - Provider create, list, update, delete, and connection test endpoints
+- Model list endpoint backed by a provider adapter
+- Model picker with loading, refresh, empty, and error states
+- Capability tags for image models, including `text-to-image` and `image-to-image`
 - API Key redaction in responses and logs
 - lint, test, build, and dev scripts
 
 Not included yet:
 
-- Model discovery
 - Text-to-image generation
 - Image-to-image generation
 - History management
@@ -89,3 +91,31 @@ curl -X POST http://localhost:3001/api/providers/test \
 ```
 
 The connection test sends a lightweight `GET` request to the configured base URL with a bearer token. It does not discover models or generate images.
+
+## Model Discovery API
+
+List image-capable models for a saved provider:
+
+```bash
+curl -X POST http://localhost:3001/api/models/list \
+  -H "content-type: application/json" \
+  -d '{"providerId":"provider-id"}'
+```
+
+Expected response:
+
+```json
+{
+  "models": [
+    {
+      "id": "gpt-image-1",
+      "name": "GPT Image",
+      "providerId": "provider-id",
+      "capabilities": ["text-to-image"]
+    }
+  ],
+  "fetchedAt": "2026-06-09T00:00:00.000Z"
+}
+```
+
+The browser sends only the saved `providerId`. The server reads the API Key from its in-memory provider store, calls the provider's common `/models` endpoint, normalizes OpenAI-compatible `data` responses and image2-compatible `models` responses, and filters for image-capable models.

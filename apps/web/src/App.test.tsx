@@ -33,7 +33,7 @@ describe("App", () => {
     vi.unstubAllGlobals();
   });
 
-  it("renders the phase 1 provider setup empty state", async () => {
+  it("renders the phase 2 model discovery empty state", async () => {
     vi.mocked(fetch).mockResolvedValueOnce(
       await jsonResponse({
         providers: []
@@ -43,7 +43,7 @@ describe("App", () => {
     render(<App />);
 
     expect(
-      await screen.findByRole("heading", { name: /image2 provider setup/i })
+      await screen.findByRole("heading", { name: /image2 model discovery/i })
     ).toBeInTheDocument();
     expect(screen.getByText(/add an api provider/i)).toBeInTheDocument();
   });
@@ -56,7 +56,13 @@ describe("App", () => {
           providers: []
         })
       )
-      .mockResolvedValueOnce(await jsonResponse(provider, { status: 201 }));
+      .mockResolvedValueOnce(await jsonResponse(provider, { status: 201 }))
+      .mockResolvedValueOnce(
+        await jsonResponse({
+          models: [],
+          fetchedAt: "2026-06-09T00:00:02.000Z"
+        })
+      );
 
     render(<App />);
 
@@ -79,30 +85,40 @@ describe("App", () => {
   });
 
   it("tests a saved provider connection", async () => {
-    vi.mocked(fetch)
-      .mockResolvedValueOnce(
-        await jsonResponse({
-          providers: [provider]
-        })
-      )
-      .mockResolvedValueOnce(
-        await jsonResponse({
+    let providerLoads = 0;
+    vi.mocked(fetch).mockImplementation(async (input) => {
+      const url = input.toString();
+
+      if (url === "/api/providers") {
+        providerLoads += 1;
+        return jsonResponse({
+          providers: [
+            {
+              ...provider,
+              lastTestStatus: providerLoads > 1 ? "success" : "untested"
+            }
+          ]
+        });
+      }
+
+      if (url === "/api/models/list") {
+        return jsonResponse({
+          models: [],
+          fetchedAt: "2026-06-09T00:00:02.000Z"
+        });
+      }
+
+      if (url === "/api/providers/test") {
+        return jsonResponse({
           ok: true,
           message: "Provider is reachable and did not reject the API Key.",
           testedAt: "2026-06-09T00:00:01.000Z",
           statusCode: 200
-        })
-      )
-      .mockResolvedValueOnce(
-        await jsonResponse({
-          providers: [
-            {
-              ...provider,
-              lastTestStatus: "success"
-            }
-          ]
-        })
-      );
+        });
+      }
+
+      throw new Error(`Unexpected fetch ${url}`);
+    });
 
     render(<App />);
 
@@ -114,6 +130,55 @@ describe("App", () => {
     });
     expect(fetch).toHaveBeenCalledWith(
       "/api/providers/test",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({ providerId: "provider-1" })
+      })
+    );
+  });
+
+  it("loads and selects image-capable models for the selected provider", async () => {
+    vi.mocked(fetch).mockImplementation(async (input) => {
+      const url = input.toString();
+
+      if (url === "/api/providers") {
+        return jsonResponse({
+          providers: [provider]
+        });
+      }
+
+      if (url === "/api/models/list") {
+        return jsonResponse({
+          models: [
+            {
+              id: "gpt-image-1",
+              name: "GPT Image",
+              providerId: provider.id,
+              capabilities: ["text-to-image"]
+            },
+            {
+              id: "image-edit-pro",
+              name: "Image Edit Pro",
+              providerId: provider.id,
+              capabilities: ["image-to-image"]
+            }
+          ],
+          fetchedAt: "2026-06-09T00:00:02.000Z"
+        });
+      }
+
+      throw new Error(`Unexpected fetch ${url}`);
+    });
+
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: /local provider/i }));
+
+    expect(await screen.findAllByText("GPT Image")).toHaveLength(2);
+    expect(screen.getByText("Text to image")).toBeInTheDocument();
+    expect(screen.getByText("Image to image")).toBeInTheDocument();
+    expect(fetch).toHaveBeenCalledWith(
+      "/api/models/list",
       expect.objectContaining({
         method: "POST",
         body: JSON.stringify({ providerId: "provider-1" })

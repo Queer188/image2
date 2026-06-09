@@ -1,6 +1,7 @@
 import Fastify from "fastify";
 import type { HealthStatus } from "@image2/shared";
 import { AppError } from "./errors.js";
+import { registerModelRoutes } from "./model-routes.js";
 import { registerProviderRoutes } from "./provider-routes.js";
 
 export function buildServer() {
@@ -42,6 +43,7 @@ export function buildServer() {
   });
 
   void registerProviderRoutes(server);
+  void registerModelRoutes(server);
 
   return server;
 }
