@@ -170,6 +170,65 @@ describe("image routes", () => {
     });
   });
 
+  it("rejects reference image uploads larger than 5 MB", async () => {
+    const server = buildServer();
+    const tooLargeImage = Buffer.alloc(5 * 1024 * 1024 + 1).toString("base64");
+    const response = await server.inject({
+      method: "POST",
+      url: "/api/images/upload",
+      payload: {
+        fileName: "large.png",
+        mimeType: "image/png",
+        dataUrl: `data:image/png;base64,${tooLargeImage}`
+      }
+    });
+
+    expect(response.statusCode).toBe(400);
+    expect(response.json()).toMatchObject({
+      error: {
+        code: "BAD_REQUEST",
+        message: "Upload image must be 5 MB or smaller."
+      }
+    });
+  });
+
+  it("redacts provider generation error details", async () => {
+    await withHttpServer((_request, response) => {
+      response.statusCode = 500;
+      response.end(
+        JSON.stringify({
+          error: "Authorization: Bearer sk-generation-secret",
+          apiKey: "sk-generation-secret",
+          image: "data:image/png;base64,aGVsbG8="
+        })
+      );
+    }, async (baseUrl) => {
+      const server = buildServer();
+      const provider = await createSavedProvider(server, baseUrl);
+
+      const response = await server.inject({
+        method: "POST",
+        url: "/api/images/generate",
+        payload: {
+          providerId: provider.id,
+          modelId: "gpt-image-1",
+          mode: "text-to-image",
+          prompt: "A quiet studio desk"
+        }
+      });
+
+      expect(response.statusCode).toBe(502);
+      expect(response.body).not.toContain("sk-generation-secret");
+      expect(response.body).not.toContain("aGVsbG8=");
+      expect(response.body).not.toContain("Bearer sk-");
+      expect(response.json()).toMatchObject({
+        error: {
+          code: "PROVIDER_GENERATION_FAILED"
+        }
+      });
+    });
+  });
+
   it("generates image-to-image results with image2-compatible JSON payloads", async () => {
     await withHttpServer((request, response) => {
       expect(request.url).toBe("/v1/images/generations");

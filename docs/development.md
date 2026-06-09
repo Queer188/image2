@@ -26,7 +26,7 @@ npm test
 npm run build
 ```
 
-## Phase 5 Notes
+## Phase 6 Notes
 
 - The web app proxies `/api` and `/health` to the local Fastify server during Vite development.
 - Provider configuration is stored in server memory. Restarting the server clears providers and API keys.
@@ -46,3 +46,7 @@ npm run build
 - Local history keeps generated image metadata/URLs and reusable generation parameters.
 - Local history does not store plaintext API Keys, Authorization headers, or uploaded reference image data URLs.
 - Reusing image-to-image history restores the parameters and clears the current uploaded input so the user uploads the reference image again.
+- Provider Base URLs are validated before save and before outbound provider calls.
+- Local provider URLs are controlled by `ALLOW_LOCAL_PROVIDER_URLS`.
+- Direct browser API access is controlled by the `CORS_ORIGIN` allowlist.
+- Run `npm run check` before release to execute lint, tests, and build.

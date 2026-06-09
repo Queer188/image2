@@ -4,6 +4,27 @@ import { AppError } from "./errors.js";
 
 const LOCAL_HOSTNAMES = new Set(["localhost"]);
 
+function envFlag(value: string | undefined): boolean | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  const normalized = value.trim().toLowerCase();
+  if (["1", "true", "yes", "on"].includes(normalized)) {
+    return true;
+  }
+
+  if (["0", "false", "no", "off"].includes(normalized)) {
+    return false;
+  }
+
+  return undefined;
+}
+
+function localProviderUrlsAllowed(): boolean {
+  return envFlag(process.env.ALLOW_LOCAL_PROVIDER_URLS) ?? process.env.NODE_ENV !== "production";
+}
+
 function isPrivateIpv4(address: string): boolean {
   const parts = address.split(".").map(Number);
   if (parts.length !== 4 || parts.some((part) => Number.isNaN(part))) {
@@ -12,22 +33,33 @@ function isPrivateIpv4(address: string): boolean {
 
   const [first, second] = parts;
   return (
+    first === 0 ||
     first === 10 ||
     first === 127 ||
+    (first === 100 && second >= 64 && second <= 127) ||
     (first === 172 && second >= 16 && second <= 31) ||
+    (first === 192 && second === 0) ||
     (first === 192 && second === 168) ||
     (first === 169 && second === 254) ||
-    first === 0
+    (first === 198 && (second === 18 || second === 19)) ||
+    first >= 224
   );
 }
 
 function isPrivateIpv6(address: string): boolean {
   const normalized = address.toLowerCase();
+  const mappedIpv4 = normalized.match(/^::ffff:(\d+\.\d+\.\d+\.\d+)$/);
+  if (mappedIpv4) {
+    return isPrivateIpv4(mappedIpv4[1]);
+  }
+
   return (
+    normalized === "::" ||
     normalized === "::1" ||
     normalized.startsWith("fc") ||
     normalized.startsWith("fd") ||
-    normalized.startsWith("fe80:")
+    normalized.startsWith("fe80:") ||
+    normalized.startsWith("ff")
   );
 }
 
@@ -61,7 +93,7 @@ export async function assertSafeProviderUrl(baseUrl: string): Promise<URL> {
     throw new AppError("BAD_REQUEST", "API Base URL must be a valid URL.", 400);
   }
 
-  const allowLocal = process.env.NODE_ENV !== "production";
+  const allowLocal = localProviderUrlsAllowed();
   const hostname = parsed.hostname;
 
   if (isLocalHost(hostname) && !allowLocal) {
@@ -110,6 +142,12 @@ export async function assertSafeProviderUrl(baseUrl: string): Promise<URL> {
       if (error instanceof AppError) {
         throw error;
       }
+
+      throw new AppError(
+        "PROVIDER_URL_BLOCKED",
+        "Provider URL hostname could not be verified.",
+        400
+      );
     }
   }
 

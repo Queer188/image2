@@ -133,4 +133,48 @@ describe("model routes", () => {
       });
     });
   });
+
+  it("redacts provider model-list error details", async () => {
+    const apiKey = "sk-model-detail-secret";
+
+    await withHttpServer((_request, response) => {
+      response.statusCode = 500;
+      response.end(
+        JSON.stringify({
+          error: `Authorization: Bearer ${apiKey}`,
+          apiKey,
+          token: apiKey
+        })
+      );
+    }, async (baseUrl) => {
+      const server = buildServer();
+      const createResponse = await server.inject({
+        method: "POST",
+        url: "/api/providers",
+        payload: {
+          name: "Leaky Provider",
+          baseUrl,
+          apiKey
+        }
+      });
+      const provider = createResponse.json();
+
+      const listResponse = await server.inject({
+        method: "POST",
+        url: "/api/models/list",
+        payload: {
+          providerId: provider.id
+        }
+      });
+
+      expect(listResponse.statusCode).toBe(502);
+      expect(listResponse.body).not.toContain(apiKey);
+      expect(listResponse.body).not.toContain("Bearer sk-");
+      expect(listResponse.json()).toMatchObject({
+        error: {
+          code: "PROVIDER_MODEL_LIST_FAILED"
+        }
+      });
+    });
+  });
 });
