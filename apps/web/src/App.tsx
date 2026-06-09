@@ -18,6 +18,7 @@ import type {
   UploadedImageRef,
   UploadImageResponse
 } from "@image2/shared";
+import { zhCN as copy } from "./copy/zh-CN";
 
 type FormState = {
   id?: string;
@@ -75,11 +76,13 @@ const MAX_HISTORY_ITEMS = 50;
 async function parseApiError(response: Response): Promise<string> {
   try {
     const payload = (await response.json()) as ApiErrorResponse;
-    return payload.error.detail
-      ? `${payload.error.message} ${payload.error.detail}`
-      : payload.error.message;
+    return copy.errors.localizeApiError(
+      payload.error.code,
+      payload.error.message,
+      payload.error.detail
+    );
   } catch {
-    return `Request failed with HTTP ${response.status}.`;
+    return copy.errors.requestFailed(response.status);
   }
 }
 
@@ -93,30 +96,22 @@ async function readJson<T>(response: Response): Promise<T> {
 
 function formatStatus(provider: ProviderConfig): string {
   if (provider.lastTestStatus === "success") {
-    return "Connected";
+    return copy.status.connected;
   }
 
   if (provider.lastTestStatus === "failed") {
-    return "Test failed";
+    return copy.status.testFailed;
   }
 
-  return "Not tested";
+  return copy.status.notTested;
 }
 
 function formatCapability(capability: ImageModel["capabilities"][number]): string {
-  return capability === "text-to-image" ? "Text to image" : "Image to image";
+  return copy.capabilities[capability];
 }
 
 function formatProviderType(providerType: ProviderConfig["providerType"]): string {
-  if (providerType === "openai-compatible") {
-    return "OpenAI-compatible";
-  }
-
-  if (providerType === "image2-compatible") {
-    return "image2-compatible";
-  }
-
-  return "Auto";
+  return copy.providerTypes[providerType ?? "auto"];
 }
 
 function capabilityOverridesText(
@@ -138,17 +133,17 @@ function parseCapabilityOverrides(
   const capabilities = new Set(["text-to-image", "image-to-image"]);
 
   if (!Array.isArray(parsed)) {
-    throw new Error("Capability overrides must be a JSON array.");
+    throw new Error(copy.errors.invalidCapabilityOverridesJsonArray);
   }
 
   const overrides = parsed.map((item) => {
     if (typeof item !== "object" || item === null) {
-      throw new Error("Each capability override must be an object.");
+      throw new Error(copy.errors.invalidCapabilityOverrideObject);
     }
 
     const record = item as Partial<ProviderCapabilityOverride>;
     if (!record.modelId?.trim()) {
-      throw new Error("Each capability override needs a modelId.");
+      throw new Error(copy.errors.capabilityOverrideMissingModel);
     }
 
     if (
@@ -156,7 +151,7 @@ function parseCapabilityOverrides(
       record.capabilities.length === 0 ||
       record.capabilities.some((capability) => !capabilities.has(capability))
     ) {
-      throw new Error("Capability overrides must use supported capabilities.");
+      throw new Error(copy.errors.unsupportedCapabilityOverride);
     }
 
     return {
@@ -199,7 +194,7 @@ function imageHref(image: GeneratedImage | undefined): string | undefined {
 }
 
 function isBrowserHistoryFallback(message: string | undefined): boolean {
-  return message?.startsWith("Server history is unavailable.") ?? false;
+  return message?.startsWith(copy.errors.browserHistoryFallback) ?? false;
 }
 
 function createHistoryId(): string {
@@ -241,11 +236,19 @@ function loadGenerationHistory(): GenerationHistoryRecord[] {
 }
 
 function formatMode(mode: GenerateImageMode): string {
-  return mode === "text-to-image" ? "Text to image" : "Image to image";
+  return copy.modes[mode];
 }
 
 function formatDate(value: string): string {
   return new Date(value).toLocaleString();
+}
+
+function formatQuality(value: string | undefined): string {
+  if (!value) {
+    return copy.values.notAvailable;
+  }
+
+  return copy.quality[value as keyof typeof copy.quality] ?? value;
 }
 
 async function copyText(value: string): Promise<void> {
@@ -274,10 +277,10 @@ function readFileAsDataUrl(file: File): Promise<string> {
         return;
       }
 
-      reject(new Error("Unable to read the selected image."));
+      reject(new Error(copy.errors.readSelectedImage));
     });
     reader.addEventListener("error", () => {
-      reject(new Error("Unable to read the selected image."));
+      reject(new Error(copy.errors.readSelectedImage));
     });
     reader.readAsDataURL(file);
   });
@@ -347,7 +350,7 @@ export function App() {
       setProviders(payload.providers);
     } catch (loadError) {
       if (!options.preserveStatus) {
-        setError(loadError instanceof Error ? loadError.message : "Load failed.");
+        setError(loadError instanceof Error ? loadError.message : copy.errors.loadProviders);
       }
     } finally {
       setIsLoading(false);
@@ -394,7 +397,7 @@ export function App() {
       setSelectedModelId("");
       setModelFetchedAt(undefined);
       setModelError(
-        loadError instanceof Error ? loadError.message : "Model discovery failed."
+        loadError instanceof Error ? loadError.message : copy.errors.modelDiscovery
       );
     } finally {
       setIsLoadingModels(false);
@@ -444,8 +447,8 @@ export function App() {
         setGenerationHistory(migrated.records.slice(0, MAX_HISTORY_ITEMS));
         setHistoryMessage(
           migrated.imported > 0
-            ? `Imported ${migrated.imported} saved history item(s).`
-            : "Saved history is already up to date."
+            ? copy.messages.importedHistory(migrated.imported)
+            : copy.messages.importedHistory(0)
         );
         return;
       }
@@ -456,14 +459,12 @@ export function App() {
       const fallback = loadGenerationHistory();
       if (fallback.length > 0) {
         setGenerationHistory(fallback.slice(0, MAX_HISTORY_ITEMS));
-        setHistoryError(
-          "Server history is unavailable. Showing browser history until the server can be reached."
-        );
+        setHistoryError(copy.errors.browserHistoryFallback);
         return;
       }
 
       setHistoryError(
-        loadError instanceof Error ? loadError.message : "History could not be loaded."
+        loadError instanceof Error ? loadError.message : copy.errors.historyLoad
       );
     }
   }
@@ -519,13 +520,13 @@ export function App() {
     setUploadedInput(undefined);
 
     if (!allowedUploadMimeTypes.includes(file.type)) {
-      setUploadError("Upload a PNG, JPEG, or WebP reference image.");
+      setUploadError(copy.errors.unsupportedUploadType);
       setIsUploadingInput(false);
       return;
     }
 
     if (file.size > MAX_UPLOAD_BYTES) {
-      setUploadError("Reference image must be 5 MB or smaller.");
+      setUploadError(copy.errors.uploadTooLarge);
       setIsUploadingInput(false);
       return;
     }
@@ -555,7 +556,7 @@ export function App() {
       });
     } catch (uploadFailure) {
       setUploadError(
-        uploadFailure instanceof Error ? uploadFailure.message : "Upload failed."
+        uploadFailure instanceof Error ? uploadFailure.message : copy.errors.uploadFailed
       );
     } finally {
       setIsUploadingInput(false);
@@ -586,7 +587,7 @@ export function App() {
       setError(
         overrideError instanceof Error
           ? overrideError.message
-          : "Capability overrides are invalid."
+          : copy.errors.invalidCapabilityOverrides
       );
       setIsSaving(false);
       return;
@@ -628,12 +629,12 @@ export function App() {
         providerType: provider.providerType ?? "auto",
         capabilityOverridesText: capabilityOverridesText(provider.capabilityOverrides)
       });
-      setMessage("Provider saved. API Key is stored only in the server process.");
+      setMessage(copy.messages.providerSaved);
       if (isEditing) {
         await loadModels(provider.id);
       }
     } catch (saveError) {
-      setError(saveError instanceof Error ? saveError.message : "Save failed.");
+      setError(saveError instanceof Error ? saveError.message : copy.errors.saveProvider);
     } finally {
       setIsSaving(false);
     }
@@ -651,7 +652,7 @@ export function App() {
       Boolean(savedProviderBaseUrl) &&
       form.baseUrl.trim() === savedProviderBaseUrl;
     if (form.id && !useSavedProvider && !form.apiKey.trim()) {
-      setError("Enter an API Key to test unsaved provider changes, or save first.");
+      setError(copy.errors.needApiKeyToTest);
       setIsTesting(false);
       return;
     }
@@ -672,10 +673,12 @@ export function App() {
           body: JSON.stringify(payload)
         })
       );
-      setMessage(`${result.message} HTTP ${result.statusCode ?? "n/a"}.`);
+      setMessage(copy.messages.testSucceeded(result.message, result.statusCode));
       await loadProviders({ preserveStatus: true });
     } catch (testError) {
-      setError(testError instanceof Error ? testError.message : "Connection failed.");
+      setError(
+        testError instanceof Error ? testError.message : copy.errors.connectionFailed
+      );
       await loadProviders({ preserveStatus: true });
     } finally {
       setIsTesting(false);
@@ -701,10 +704,10 @@ export function App() {
 
       setProviders((current) => current.filter((provider) => provider.id !== form.id));
       resetForm();
-      setMessage("Provider deleted.");
+      setMessage(copy.messages.providerDeleted);
     } catch (deleteError) {
       setError(
-        deleteError instanceof Error ? deleteError.message : "Delete failed."
+        deleteError instanceof Error ? deleteError.message : copy.errors.deleteProvider
       );
     } finally {
       setIsSaving(false);
@@ -765,9 +768,9 @@ export function App() {
 
   function viewHistoryRecord(record: GenerationHistoryRecord) {
     setGeneratedImages(record.images);
-    setGenerationMessage(`Viewing ${record.images.length} saved image(s).`);
+    setGenerationMessage(copy.messages.viewingSavedImages(record.images.length));
     setGenerationError(undefined);
-    setHistoryMessage(`Viewing results from ${formatDate(record.createdAt)}.`);
+    setHistoryMessage(copy.messages.viewingHistoryFrom(formatDate(record.createdAt)));
     setHistoryError(undefined);
   }
 
@@ -797,26 +800,22 @@ export function App() {
 
     if (record.parameters.mode === "image-to-image") {
       setUploadedInput(undefined);
-      setGenerationMessage(
-        "Parameters reused. Upload the reference image again before regenerating."
-      );
+      setGenerationMessage(copy.messages.imageToImageParametersReused);
     } else {
-      setGenerationMessage("Parameters reused.");
+      setGenerationMessage(copy.messages.parametersReused);
     }
 
     setHistoryMessage(
       matchingProvider
-        ? "History parameters copied into the generation form."
-        : "History parameters copied, but the original provider is no longer saved."
+        ? copy.messages.historyParametersCopied
+        : copy.messages.historyProviderMissing
     );
     setHistoryError(undefined);
   }
 
   async function deleteHistoryRecord(recordId: string) {
     if (showingBrowserHistoryFallback) {
-      setHistoryError(
-        "Reconnect the server before deleting migrated browser history from this view."
-      );
+      setHistoryError(copy.errors.serverHistoryDeleteBlocked);
       setHistoryMessage(undefined);
       return;
     }
@@ -832,11 +831,11 @@ export function App() {
       setGenerationHistory((current) =>
         current.filter((record) => record.id !== recordId)
       );
-      setHistoryMessage("History item deleted.");
+      setHistoryMessage(copy.messages.historyItemDeleted);
       setHistoryError(undefined);
     } catch (deleteError) {
       setHistoryError(
-        deleteError instanceof Error ? deleteError.message : "History delete failed."
+        deleteError instanceof Error ? deleteError.message : copy.errors.historyDelete
       );
       setHistoryMessage(undefined);
     }
@@ -844,9 +843,7 @@ export function App() {
 
   async function clearHistory() {
     if (showingBrowserHistoryFallback) {
-      setHistoryError(
-        "Reconnect the server before clearing migrated browser history from this view."
-      );
+      setHistoryError(copy.errors.serverHistoryClearBlocked);
       setHistoryMessage(undefined);
       return;
     }
@@ -860,11 +857,11 @@ export function App() {
       }
 
       setGenerationHistory([]);
-      setHistoryMessage("History cleared.");
+      setHistoryMessage(copy.messages.historyCleared);
       setHistoryError(undefined);
     } catch (clearError) {
       setHistoryError(
-        clearError instanceof Error ? clearError.message : "History clear failed."
+        clearError instanceof Error ? clearError.message : copy.errors.historyClear
       );
       setHistoryMessage(undefined);
     }
@@ -874,18 +871,18 @@ export function App() {
     try {
       await copyText(url);
       if (surface === "generation") {
-        setGenerationMessage("Image URL copied.");
+        setGenerationMessage(copy.messages.imageUrlCopied);
         setGenerationError(undefined);
       } else {
-        setHistoryMessage("Image URL copied.");
+        setHistoryMessage(copy.messages.imageUrlCopied);
         setHistoryError(undefined);
       }
     } catch {
       if (surface === "generation") {
-        setGenerationError("Unable to copy the image URL in this browser.");
+        setGenerationError(copy.errors.copyImageUrl);
         setGenerationMessage(undefined);
       } else {
-        setHistoryError("Unable to copy the image URL in this browser.");
+        setHistoryError(copy.errors.copyImageUrl);
         setHistoryMessage(undefined);
       }
     }
@@ -898,7 +895,7 @@ export function App() {
     setGenerationError(undefined);
 
     if (!selectedProvider) {
-      setGenerationError("Select a provider before generating images.");
+      setGenerationError(copy.errors.selectProviderBeforeGenerating);
       setIsGenerating(false);
       return;
     }
@@ -906,8 +903,8 @@ export function App() {
     if (!selectedModel || !supportsGenerationMode(selectedModel, activeMode)) {
       setGenerationError(
         activeMode === "text-to-image"
-          ? "Select a text-to-image model before generating."
-          : "Select an image-to-image model before generating."
+          ? copy.errors.selectTextModelBeforeGenerating
+          : copy.errors.selectImageModelBeforeGenerating
       );
       setIsGenerating(false);
       return;
@@ -915,7 +912,7 @@ export function App() {
 
     const trimmedPrompt = generationForm.prompt.trim();
     if (!trimmedPrompt) {
-      setGenerationError("Prompt is required.");
+      setGenerationError(copy.errors.promptRequired);
       setIsGenerating(false);
       return;
     }
@@ -923,13 +920,13 @@ export function App() {
     const seed =
       generationForm.seed.trim() === "" ? undefined : Number(generationForm.seed);
     if (seed !== undefined && !Number.isInteger(seed)) {
-      setGenerationError("Seed must be an integer.");
+      setGenerationError(copy.errors.seedInteger);
       setIsGenerating(false);
       return;
     }
 
     if (activeMode === "image-to-image" && !uploadedInput) {
-      setGenerationError("Upload a reference image before generating.");
+      setGenerationError(copy.errors.uploadReferenceBeforeGenerating);
       setIsGenerating(false);
       return;
     }
@@ -960,7 +957,7 @@ export function App() {
       );
 
       setGeneratedImages(result.images);
-      setGenerationMessage(`Generated ${result.images.length} image(s).`);
+      setGenerationMessage(copy.messages.generatedImages(result.images.length));
       const historyRecord =
         result.historyRecord ??
         createGenerationHistoryRecord(
@@ -977,12 +974,12 @@ export function App() {
             MAX_HISTORY_ITEMS
           )
         );
-        setHistoryMessage("Generation saved to history.");
+        setHistoryMessage(copy.messages.generationSavedToHistory);
         setHistoryError(undefined);
       }
     } catch (generateError) {
       setGenerationError(
-        generateError instanceof Error ? generateError.message : "Generation failed."
+        generateError instanceof Error ? generateError.message : copy.errors.generationFailed
       );
     } finally {
       setIsGenerating(false);
@@ -993,59 +990,63 @@ export function App() {
     <main className="app-shell">
       <header className="top-bar">
         <div>
-          <p className="eyebrow">v0.2 release</p>
-          <h1>image2 Generation Workbench</h1>
+          <p className="eyebrow">{copy.app.version}</p>
+          <h1>{copy.app.title}</h1>
         </div>
-        <span className="status-pill">Local image generation workbench</span>
+        <span className="status-pill">{copy.app.tagline}</span>
       </header>
 
       <section className="workspace" aria-labelledby="provider-title">
         <form className="provider-form" onSubmit={saveProvider}>
           <div className="section-heading">
-            <p className="eyebrow">API Provider</p>
+            <p className="eyebrow">{copy.sections.apiProvider}</p>
             <h2 id="provider-title">
-              {form.id ? "Edit provider" : "Add provider"}
+              {form.id ? copy.sections.editProvider : copy.sections.addProvider}
             </h2>
           </div>
 
           <label>
-            Provider name
+            {copy.labels.providerName}
             <input
               autoComplete="off"
               onChange={(event) => updateField("name", event.target.value)}
-              placeholder="OpenAI compatible"
+              placeholder={copy.placeholders.providerName}
               required
               value={form.name}
             />
           </label>
 
           <label>
-            API Base URL
+            {copy.labels.apiBaseUrl}
             <input
               inputMode="url"
               onChange={(event) => updateField("baseUrl", event.target.value)}
-              placeholder="https://api.example.com/v1"
+              placeholder={copy.placeholders.apiBaseUrl}
               required
               value={form.baseUrl}
             />
           </label>
 
           <label>
-            Provider type
+            {copy.labels.providerType}
             <select
               onChange={(event) =>
                 updateField("providerType", event.target.value as ProviderType)
               }
               value={form.providerType}
             >
-              <option value="auto">Auto</option>
-              <option value="openai-compatible">OpenAI-compatible</option>
-              <option value="image2-compatible">image2-compatible</option>
+              <option value="auto">{copy.providerTypes.auto}</option>
+              <option value="openai-compatible">
+                {copy.providerTypes["openai-compatible"]}
+              </option>
+              <option value="image2-compatible">
+                {copy.providerTypes["image2-compatible"]}
+              </option>
             </select>
           </label>
 
           <label>
-            Capability overrides
+            {copy.labels.capabilityOverrides}
             <textarea
               onChange={(event) =>
                 updateField("capabilityOverridesText", event.target.value)
@@ -1057,11 +1058,13 @@ export function App() {
           </label>
 
           <label>
-            API Key
+            {copy.labels.apiKey}
             <input
               autoComplete="new-password"
               onChange={(event) => updateField("apiKey", event.target.value)}
-              placeholder={form.id ? "Leave blank to keep current key" : "sk-..."}
+              placeholder={
+                form.id ? copy.placeholders.keepCurrentKey : copy.placeholders.newApiKey
+              }
               required={!form.id}
               type="password"
               value={form.apiKey}
@@ -1070,7 +1073,7 @@ export function App() {
 
           {selectedProvider ? (
             <p className="key-preview">
-              Current key: <strong>{selectedProvider.apiKeyPreview}</strong>
+              {copy.labels.currentKey}：<strong>{selectedProvider.apiKeyPreview}</strong>
             </p>
           ) : null}
 
@@ -1084,7 +1087,7 @@ export function App() {
               }
               type="submit"
             >
-              {isSaving ? "Saving..." : "Save provider"}
+              {isSaving ? copy.actions.saving : copy.actions.saveProvider}
             </button>
             <button
               disabled={
@@ -1096,7 +1099,7 @@ export function App() {
               onClick={testProvider}
               type="button"
             >
-              {isTesting ? "Testing..." : "Test connection"}
+              {isTesting ? copy.actions.testing : copy.actions.testConnection}
             </button>
             {form.id ? (
               <button
@@ -1105,7 +1108,7 @@ export function App() {
                 onClick={deleteSelectedProvider}
                 type="button"
               >
-                Delete
+                {copy.actions.delete}
               </button>
             ) : null}
             <button
@@ -1114,7 +1117,7 @@ export function App() {
               onClick={resetForm}
               type="button"
             >
-              New
+              {copy.actions.newProvider}
             </button>
           </div>
 
@@ -1122,18 +1125,18 @@ export function App() {
           {error ? <p className="notice error">{error}</p> : null}
         </form>
 
-        <aside className="provider-list" aria-label="Saved providers">
+        <aside className="provider-list" aria-label={copy.aria.savedProviders}>
           <div className="section-heading">
-            <p className="eyebrow">Saved services</p>
-            <h2>Providers</h2>
+            <p className="eyebrow">{copy.sections.savedServices}</p>
+            <h2>{copy.sections.providers}</h2>
           </div>
 
-          {isLoading ? <p className="empty-state">Loading providers...</p> : null}
+          {isLoading ? (
+            <p className="empty-state">{copy.empty.loadingProviders}</p>
+          ) : null}
 
           {!isLoading && providers.length === 0 ? (
-            <p className="empty-state">
-              Add an API provider to unlock model discovery and generation.
-            </p>
+            <p className="empty-state">{copy.empty.noProviders}</p>
           ) : null}
 
           <div className="provider-stack">
@@ -1150,7 +1153,9 @@ export function App() {
                   <small>
                     {formatProviderType(provider.providerType)}
                     {provider.capabilityOverrides?.length
-                      ? ` - ${provider.capabilityOverrides.length} override(s)`
+                      ? copy.messages.providerOverrides(
+                          provider.capabilityOverrides.length
+                        )
                       : ""}
                   </small>
                 </span>
@@ -1166,8 +1171,8 @@ export function App() {
       <section className="model-panel" aria-labelledby="model-title">
         <div className="model-panel-header">
           <div className="section-heading">
-            <p className="eyebrow">Model discovery</p>
-            <h2 id="model-title">Models</h2>
+            <p className="eyebrow">{copy.sections.modelDiscovery}</p>
+            <h2 id="model-title">{copy.sections.models}</h2>
           </div>
           <button
             className="secondary"
@@ -1175,16 +1180,18 @@ export function App() {
             onClick={() => loadModels()}
             type="button"
           >
-            {isLoadingModels ? "Loading..." : "Refresh"}
+            {isLoadingModels ? copy.actions.loading : copy.actions.refreshModels}
           </button>
         </div>
 
         {!selectedProvider ? (
-          <p className="empty-state">Select or save a provider to fetch models.</p>
+          <p className="empty-state">{copy.empty.selectProviderForModels}</p>
         ) : null}
 
         {selectedProvider && isLoadingModels ? (
-          <p className="empty-state">Loading models from {selectedProvider.name}...</p>
+          <p className="empty-state">
+            {copy.empty.loadingModels(selectedProvider.name)}
+          </p>
         ) : null}
 
         {selectedProvider && !isLoadingModels && modelError ? (
@@ -1192,17 +1199,13 @@ export function App() {
         ) : null}
 
         {selectedProvider && !isLoadingModels && !modelError && models.length === 0 ? (
-          <p className="empty-state">
-            No image-capable models were returned. Refresh after checking the
-            provider type, or add capability overrides if the provider omits image
-            metadata.
-          </p>
+          <p className="empty-state">{copy.empty.noImageModels}</p>
         ) : null}
 
         {models.length > 0 ? (
           <>
             <label className="model-select-label">
-              Model for current mode
+              {copy.labels.modelForCurrentMode}
               <select
                 onChange={(event) => setSelectedModelId(event.target.value)}
                 value={
@@ -1211,7 +1214,7 @@ export function App() {
                     : ""
                 }
               >
-                <option value="">Select model</option>
+                <option value="">{copy.labels.model}</option>
                 {activeModeModels.map((model) => (
                   <option key={model.id} value={model.id}>
                     {model.name}
@@ -1246,8 +1249,12 @@ export function App() {
             </div>
 
             <p className="model-meta">
-              {selectedModel ? `Selected ${selectedModel.name}. ` : ""}
-              {modelFetchedAt ? `Fetched ${new Date(modelFetchedAt).toLocaleString()}.` : ""}
+              {selectedModel ? copy.messages.modelSelected(selectedModel.name) : ""}
+              {modelFetchedAt
+                ? copy.messages.modelsFetched(
+                    new Date(modelFetchedAt).toLocaleString()
+                  )
+                : ""}
             </p>
           </>
         ) : null}
@@ -1257,12 +1264,12 @@ export function App() {
         <form className="generation-form" onSubmit={generateImages}>
           <div className="section-heading">
             <p className="eyebrow">
-              {activeMode === "text-to-image" ? "Text to image" : "Image to image"}
+              {copy.modes[activeMode]}
             </p>
-            <h2 id="generation-title">Generate</h2>
+            <h2 id="generation-title">{copy.sections.generate}</h2>
           </div>
 
-          <div className="mode-tabs" role="tablist" aria-label="Generation mode">
+          <div className="mode-tabs" role="tablist" aria-label={copy.aria.generationMode}>
             <button
               aria-selected={activeMode === "text-to-image"}
               className={activeMode === "text-to-image" ? "selected" : ""}
@@ -1270,7 +1277,7 @@ export function App() {
               role="tab"
               type="button"
             >
-              Text ({textToImageModels.length})
+              {copy.modes["text-to-image"]} ({textToImageModels.length})
             </button>
             <button
               aria-selected={activeMode === "image-to-image"}
@@ -1279,24 +1286,24 @@ export function App() {
               role="tab"
               type="button"
             >
-              Image ({imageToImageModels.length})
+              {copy.modes["image-to-image"]} ({imageToImageModels.length})
             </button>
           </div>
 
           {!selectedProvider ? (
-            <p className="empty-state">Select or save a provider before generating.</p>
+            <p className="empty-state">{copy.empty.selectProviderBeforeGenerating}</p>
           ) : null}
 
           {selectedProvider && activeModeModels.length === 0 ? (
             <p className="empty-state">
               {activeMode === "text-to-image"
-                ? "Fetch a text-to-image model before generating."
-                : "Fetch an image-to-image model before generating."}
+                ? copy.empty.needTextModel
+                : copy.empty.needImageModel}
             </p>
           ) : null}
 
           <label>
-            Model
+            {copy.labels.model}
             <select
               disabled={activeModeModels.length === 0 || isGenerating}
               onChange={(event) => setSelectedModelId(event.target.value)}
@@ -1306,7 +1313,7 @@ export function App() {
                   : ""
               }
             >
-              <option value="">Select model</option>
+              <option value="">{copy.labels.model}</option>
               {activeModeModels.map((model) => (
                 <option key={model.id} value={model.id}>
                   {model.name}
@@ -1318,7 +1325,7 @@ export function App() {
           {activeMode === "image-to-image" ? (
             <div className="upload-panel">
               <label>
-                Reference image
+                {copy.labels.referenceImage}
                 <input
                   accept="image/png,image/jpeg,image/webp"
                   disabled={isUploadingInput || isGenerating}
@@ -1328,14 +1335,16 @@ export function App() {
               </label>
 
               {isUploadingInput ? (
-                <p className="empty-state">Uploading reference image...</p>
+                <p className="empty-state">{copy.empty.uploadingReference}</p>
               ) : null}
 
               {uploadedInput ? (
                 <div className="upload-preview">
-                  <img alt="Uploaded reference" src={uploadedInput.previewUrl} />
+                  <img alt={copy.labels.referenceImage} src={uploadedInput.previewUrl} />
                   <p>
-                    <strong>{uploadedInput.fileName ?? "Reference image"}</strong>
+                    <strong>
+                      {uploadedInput.fileName ?? copy.labels.referenceImage}
+                    </strong>
                     <span>
                       {uploadedInput.mimeType} -{" "}
                       {Math.ceil(uploadedInput.sizeBytes / 1024)} KB
@@ -1349,10 +1358,10 @@ export function App() {
           ) : null}
 
           <label>
-            Prompt
+            {copy.labels.prompt}
             <textarea
               onChange={(event) => updateGenerationField("prompt", event.target.value)}
-              placeholder="Describe the image to generate"
+              placeholder={copy.placeholders.prompt}
               required
               rows={5}
               value={generationForm.prompt}
@@ -1360,12 +1369,12 @@ export function App() {
           </label>
 
           <label>
-            Negative prompt
+            {copy.labels.negativePrompt}
             <textarea
               onChange={(event) =>
                 updateGenerationField("negativePrompt", event.target.value)
               }
-              placeholder="Elements to avoid"
+              placeholder={copy.placeholders.negativePrompt}
               rows={3}
               value={generationForm.negativePrompt}
             />
@@ -1373,7 +1382,7 @@ export function App() {
 
           <div className="generation-controls">
             <label>
-              Ratio
+              {copy.labels.ratio}
               <select
                 onChange={(event) => updateGenerationField("ratio", event.target.value)}
                 value={generationForm.ratio}
@@ -1387,21 +1396,21 @@ export function App() {
             </label>
 
             <label>
-              Quality
+              {copy.labels.quality}
               <select
                 onChange={(event) => updateGenerationField("quality", event.target.value)}
                 value={generationForm.quality}
               >
                 {qualityOptions.map((quality) => (
                   <option key={quality} value={quality}>
-                    {quality}
+                    {copy.quality[quality as keyof typeof copy.quality] ?? quality}
                   </option>
                 ))}
               </select>
             </label>
 
             <label>
-              Count
+              {copy.labels.count}
               <input
                 max={4}
                 min={1}
@@ -1414,11 +1423,11 @@ export function App() {
             </label>
 
             <label>
-              Seed
+              {copy.labels.seed}
               <input
                 inputMode="numeric"
                 onChange={(event) => updateGenerationField("seed", event.target.value)}
-                placeholder="Optional"
+                placeholder={copy.placeholders.optional}
                 type="number"
                 value={generationForm.seed}
               />
@@ -1426,7 +1435,7 @@ export function App() {
 
             {activeMode === "image-to-image" ? (
               <label>
-                Strength
+                {copy.labels.strength}
                 <input
                   max={1}
                   min={0}
@@ -1457,7 +1466,7 @@ export function App() {
               }
               type="submit"
             >
-              {isGenerating ? "Generating..." : "Generate"}
+              {isGenerating ? copy.actions.generating : copy.actions.generate}
             </button>
           </div>
 
@@ -1469,16 +1478,16 @@ export function App() {
 
         <section className="result-gallery" aria-labelledby="results-title">
           <div className="section-heading">
-            <p className="eyebrow">Results</p>
-            <h2 id="results-title">Gallery</h2>
+            <p className="eyebrow">{copy.sections.results}</p>
+            <h2 id="results-title">{copy.sections.gallery}</h2>
           </div>
 
           {isGenerating ? (
-            <p className="empty-state">Generating images...</p>
+            <p className="empty-state">{copy.empty.generatingImages}</p>
           ) : null}
 
           {!isGenerating && generatedImages.length === 0 ? (
-            <p className="empty-state">Generated images will appear here.</p>
+            <p className="empty-state">{copy.empty.generatedImagesPlaceholder}</p>
           ) : null}
 
           {generatedImages.length > 0 ? (
@@ -1490,19 +1499,19 @@ export function App() {
                   <article className="image-card" key={image.id}>
                     {href ? (
                       <a href={href} rel="noreferrer" target="_blank">
-                        <img alt={`Generated result ${index + 1}`} src={href} />
+                        <img alt={`生成结果 ${index + 1}`} src={href} />
                       </a>
                     ) : (
-                      <div className="image-placeholder">No preview URL</div>
+                      <div className="image-placeholder">{copy.empty.noPreviewUrl}</div>
                     )}
                     <div className="image-actions">
                       {href ? (
                         <>
                           <a href={href} rel="noreferrer" target="_blank">
-                            Preview
+                            {copy.actions.preview}
                           </a>
                           <a download={downloadName(image, index)} href={href}>
-                            Download
+                            {copy.actions.download}
                           </a>
                         </>
                       ) : null}
@@ -1514,7 +1523,7 @@ export function App() {
                           }
                           type="button"
                         >
-                          Copy URL
+                          {copy.actions.copyUrl}
                         </button>
                       ) : null}
                     </div>
@@ -1529,8 +1538,8 @@ export function App() {
       <section className="history-panel" aria-labelledby="history-title">
         <div className="history-header">
           <div className="section-heading">
-            <p className="eyebrow">History</p>
-            <h2 id="history-title">Generation history</h2>
+            <p className="eyebrow">{copy.sections.history}</p>
+            <h2 id="history-title">{copy.sections.generationHistory}</h2>
           </div>
           <button
             className="secondary"
@@ -1538,7 +1547,7 @@ export function App() {
             onClick={() => void clearHistory()}
             type="button"
           >
-            Clear history
+            {copy.actions.clearHistory}
           </button>
         </div>
 
@@ -1546,9 +1555,7 @@ export function App() {
         {historyError ? <p className="notice error">{historyError}</p> : null}
 
         {generationHistory.length === 0 ? (
-          <p className="empty-state">
-            Successful generations will be saved here on this device.
-          </p>
+          <p className="empty-state">{copy.empty.noHistory}</p>
         ) : null}
 
         {generationHistory.length > 0 ? (
@@ -1562,7 +1569,7 @@ export function App() {
                     {firstImageHref ? (
                       <img alt="" className="history-thumb" src={firstImageHref} />
                     ) : (
-                      <div className="history-thumb placeholder">No URL</div>
+                      <div className="history-thumb placeholder">{copy.empty.noImageUrl}</div>
                     )}
                     <div>
                       <h3>{record.parameters.prompt}</h3>
@@ -1571,16 +1578,19 @@ export function App() {
                         {formatDate(record.createdAt)}
                       </p>
                       <p>
-                        Ratio {record.parameters.ratio ?? "n/a"} - Quality{" "}
-                        {record.parameters.quality ?? "n/a"} - Count{" "}
+                        {copy.labels.ratio}{" "}
+                        {record.parameters.ratio ?? copy.values.notAvailable} -{" "}
+                        {copy.labels.quality}{" "}
+                        {formatQuality(record.parameters.quality)} -{" "}
+                        {copy.labels.count}{" "}
                         {record.parameters.count ?? record.images.length}
                         {record.parameters.seed !== undefined
-                          ? ` - Seed ${record.parameters.seed}`
+                          ? ` - ${copy.labels.seed} ${record.parameters.seed}`
                           : ""}
                       </p>
                       {record.parameters.inputImage ? (
                         <p>
-                          Reference:{" "}
+                          {copy.labels.referenceImage}：{" "}
                           {record.parameters.inputImage.fileName ??
                             record.parameters.inputImage.mimeType}{" "}
                           ({Math.ceil(record.parameters.inputImage.sizeBytes / 1024)} KB)
@@ -1591,14 +1601,14 @@ export function App() {
 
                   <div className="history-actions">
                     <button onClick={() => viewHistoryRecord(record)} type="button">
-                      View results
+                      {copy.actions.viewResults}
                     </button>
                     <button
                       className="secondary"
                       onClick={() => reuseHistoryRecord(record)}
                       type="button"
                     >
-                      Reuse parameters
+                      {copy.actions.reuseParameters}
                     </button>
                     <button
                       className="secondary"
@@ -1606,7 +1616,7 @@ export function App() {
                       onClick={() => void deleteHistoryRecord(record.id)}
                       type="button"
                     >
-                      Delete
+                      {copy.actions.delete}
                     </button>
                   </div>
 
@@ -1619,22 +1629,22 @@ export function App() {
                           className="history-image-row"
                           key={`${record.id}-${image.id}`}
                         >
-                          <span>Image {index + 1}</span>
+                          <span>图片 {index + 1}</span>
                           <div className="image-actions">
                             {href ? (
                               <>
                                 <a href={href} rel="noreferrer" target="_blank">
-                                  Preview
+                                  {copy.actions.preview}
                                 </a>
                                 <a
                                   download={historyImageDownloadName(record, image, index)}
                                   href={href}
                                 >
-                                  Download
+                                  {copy.actions.download}
                                 </a>
                               </>
                             ) : (
-                              <span className="muted-text">No image URL returned</span>
+                              <span className="muted-text">{copy.empty.noImageUrl}</span>
                             )}
                             {image.url ? (
                               <button
@@ -1644,7 +1654,7 @@ export function App() {
                                 }
                                 type="button"
                               >
-                                Copy URL
+                                {copy.actions.copyUrl}
                               </button>
                             ) : null}
                           </div>
