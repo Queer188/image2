@@ -28,11 +28,13 @@ npm test
 npm run build
 ```
 
-## Phase 8 Notes
+## Phase 9 Notes
 
 - The web app proxies `/api` and `/health` to the local Fastify server during Vite development.
 - Provider configuration is stored in server memory. Restarting the server clears providers and API keys.
 - Plaintext API keys are accepted only in create, update, and test request bodies. They are not returned to the browser.
+- Providers now carry a `providerType` value. `auto` keeps the current image2-first generation path, `openai-compatible` skips the image2 JSON probe, and `image2-compatible` keeps the image2 JSON-first path with OpenAI multipart fallback.
+- `capabilityOverrides` can be stored with a provider when the remote `/models` response mislabels or omits image capabilities.
 - `IMAGE2_DATA_DIR` controls the local data directory. If unset, the server uses `.image2-data` under the current working directory.
 - The server initializes `image2.sqlite` in the data directory and runs idempotent migrations at first history access.
 - Connection testing performs a lightweight request to the configured base URL.

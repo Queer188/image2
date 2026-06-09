@@ -5,12 +5,21 @@ export type HealthStatus = {
 
 export type ProviderConnectionState = "untested" | "success" | "failed";
 
+export type ProviderType = "auto" | "openai-compatible" | "image2-compatible";
+
+export type ProviderCapabilityOverride = {
+  modelId: string;
+  capabilities: ImageModelCapability[];
+};
+
 export type ProviderConfig = {
   id: string;
   name: string;
   baseUrl: string;
   apiKeyRef: string;
   apiKeyPreview: string;
+  providerType?: ProviderType;
+  capabilityOverrides?: ProviderCapabilityOverride[];
   createdAt: string;
   updatedAt: string;
   lastTestedAt?: string;
@@ -20,6 +29,8 @@ export type ProviderConfig = {
 export type ProviderRuntimeConfig = {
   baseUrl: string;
   apiKey: string;
+  providerType?: ProviderType;
+  capabilityOverrides?: ProviderCapabilityOverride[];
 };
 
 export type ImageModelCapability = "text-to-image" | "image-to-image";
@@ -108,12 +119,16 @@ export type CreateProviderRequest = {
   name: string;
   baseUrl: string;
   apiKey: string;
+  providerType?: ProviderType;
+  capabilityOverrides?: ProviderCapabilityOverride[];
 };
 
 export type UpdateProviderRequest = {
   name?: string;
   baseUrl?: string;
   apiKey?: string;
+  providerType?: ProviderType;
+  capabilityOverrides?: ProviderCapabilityOverride[];
 };
 
 export type TestProviderRequest =

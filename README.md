@@ -1,6 +1,6 @@
 # image2 Tool
 
-image2 Tool is a local-first image generation workbench. Phase 8 supports API provider configuration, connection testing, model discovery, text-to-image generation, image-to-image generation, server-side generation history, and release-ready security controls through a React web app and Fastify API server.
+image2 Tool is a local-first image generation workbench. Phase 8 supports API provider configuration, connection testing, model discovery, text-to-image generation, image-to-image generation, server-side generation history, and release-ready security controls through a React web app and Fastify API server. This branch adds provider adapter compatibility controls, including provider type selection and capability overrides.
 
 ## Current Phase
 
@@ -125,7 +125,7 @@ Create a provider:
 ```bash
 curl -X POST http://localhost:3001/api/providers \
   -H "content-type: application/json" \
-  -d '{"name":"Example","baseUrl":"https://api.example.com/v1","apiKey":"sk-..."}'
+  -d '{"name":"Example","baseUrl":"https://api.example.com/v1","apiKey":"sk-...","providerType":"auto"}'
 ```
 
 Test a provider before saving:
@@ -165,6 +165,8 @@ Expected response:
 ```
 
 The browser sends only the saved `providerId`. The server reads the API Key from its in-memory provider store, calls the provider's common `/models` endpoint, normalizes OpenAI-compatible `data` responses and image2-compatible `models` responses, and filters for image-capable models.
+
+Saved providers can also set `providerType` to `openai-compatible`, `image2-compatible`, or `auto`. `auto` keeps the current image2-first behavior for image generation while preserving the OpenAI multipart fallback. Per-model `capabilityOverrides` can be stored with the provider when a provider's `/models` response omits or mislabels image capabilities.
 
 ## Text-to-Image API
 
@@ -274,6 +276,8 @@ curl -X POST http://localhost:3001/api/images/generate \
 ```
 
 The server resolves the API Key and uploaded image server-side. image2-compatible providers receive a JSON payload with common `image` / `input_image` fields. If that endpoint is unavailable, the adapter falls back to OpenAI-compatible multipart `images/edits` requests.
+
+If you know a provider only accepts OpenAI-compatible behavior, set `providerType` to `openai-compatible` so the server skips the image2 JSON probe. If a provider advertises the wrong model capability metadata, store `capabilityOverrides` on the provider to pin the discovered model capabilities.
 
 ## Generation History
 
