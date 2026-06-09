@@ -1,10 +1,10 @@
 # image2 Tool
 
-image2 Tool is a local-first image generation workbench. Phase 2 supports API provider configuration, connection testing, and model discovery through a React web app and Fastify API server.
+image2 Tool is a local-first image generation workbench. Phase 3 supports API provider configuration, connection testing, model discovery, and text-to-image generation through a React web app and Fastify API server.
 
 ## Current Phase
 
-Phase 2: model discovery.
+Phase 3: text-to-image MVP.
 
 Included:
 
@@ -16,14 +16,17 @@ Included:
 - Model list endpoint backed by a provider adapter
 - Model picker with loading, refresh, empty, and error states
 - Capability tags for image models, including `text-to-image` and `image-to-image`
+- Text-to-image generation endpoint backed by the provider adapter
+- Text-to-image form for model, prompt, negative prompt, ratio, quality, count, and seed
+- Generation loading, success, and error states
+- Result gallery with image preview and download links
 - API Key redaction in responses and logs
 - lint, test, build, and dev scripts
 
 Not included yet:
 
-- Text-to-image generation
 - Image-to-image generation
-- History management
+- Complex history management
 
 Provider data is stored in server memory for this phase. API Keys are not returned to the browser and are not written to durable storage in cleartext.
 
@@ -119,3 +122,44 @@ Expected response:
 ```
 
 The browser sends only the saved `providerId`. The server reads the API Key from its in-memory provider store, calls the provider's common `/models` endpoint, normalizes OpenAI-compatible `data` responses and image2-compatible `models` responses, and filters for image-capable models.
+
+## Text-to-Image API
+
+Generate images with a saved provider and model:
+
+```bash
+curl -X POST http://localhost:3001/api/images/generate \
+  -H "content-type: application/json" \
+  -d '{
+    "providerId":"provider-id",
+    "modelId":"gpt-image-1",
+    "mode":"text-to-image",
+    "prompt":"A quiet studio desk",
+    "negativePrompt":"blur",
+    "ratio":"1:1",
+    "quality":"hd",
+    "count":1,
+    "seed":42
+  }'
+```
+
+Expected response:
+
+```json
+{
+  "images": [
+    {
+      "id": "image-id",
+      "url": "https://cdn.example.com/image.png",
+      "width": 1024,
+      "height": 1024,
+      "metadata": {
+        "index": 0
+      }
+    }
+  ],
+  "generatedAt": "2026-06-09T00:00:00.000Z"
+}
+```
+
+The browser still sends only the saved `providerId`, selected model, and generation parameters. The API Key is resolved server-side and is not returned in responses.

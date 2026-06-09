@@ -33,7 +33,7 @@ describe("App", () => {
     vi.unstubAllGlobals();
   });
 
-  it("renders the phase 2 model discovery empty state", async () => {
+  it("renders the phase 3 text-to-image empty state", async () => {
     vi.mocked(fetch).mockResolvedValueOnce(
       await jsonResponse({
         providers: []
@@ -43,7 +43,7 @@ describe("App", () => {
     render(<App />);
 
     expect(
-      await screen.findByRole("heading", { name: /image2 model discovery/i })
+      await screen.findByRole("heading", { name: /image2 text to image/i })
     ).toBeInTheDocument();
     expect(screen.getByText(/add an api provider/i)).toBeInTheDocument();
   });
@@ -174,8 +174,8 @@ describe("App", () => {
 
     fireEvent.click(await screen.findByRole("button", { name: /local provider/i }));
 
-    expect(await screen.findAllByText("GPT Image")).toHaveLength(2);
-    expect(screen.getByText("Text to image")).toBeInTheDocument();
+    expect(await screen.findAllByText("GPT Image")).toHaveLength(3);
+    expect(screen.getAllByText("Text to image").length).toBeGreaterThan(0);
     expect(screen.getByText("Image to image")).toBeInTheDocument();
     expect(fetch).toHaveBeenCalledWith(
       "/api/models/list",
@@ -183,6 +183,97 @@ describe("App", () => {
         method: "POST",
         body: JSON.stringify({ providerId: "provider-1" })
       })
+    );
+  });
+
+  it("generates text-to-image results without sending an API key from the browser", async () => {
+    vi.mocked(fetch).mockImplementation(async (input) => {
+      const url = input.toString();
+
+      if (url === "/api/providers") {
+        return jsonResponse({
+          providers: [provider]
+        });
+      }
+
+      if (url === "/api/models/list") {
+        return jsonResponse({
+          models: [
+            {
+              id: "gpt-image-1",
+              name: "GPT Image",
+              providerId: provider.id,
+              capabilities: ["text-to-image"]
+            }
+          ],
+          fetchedAt: "2026-06-09T00:00:02.000Z"
+        });
+      }
+
+      if (url === "/api/images/generate") {
+        return jsonResponse({
+          images: [
+            {
+              id: "image-1",
+              url: "https://cdn.example.com/image-1.png",
+              width: 1024,
+              height: 1024,
+              metadata: {
+                index: 0
+              }
+            }
+          ],
+          generatedAt: "2026-06-09T00:00:03.000Z"
+        });
+      }
+
+      throw new Error(`Unexpected fetch ${url}`);
+    });
+
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: /local provider/i }));
+    await screen.findAllByText("GPT Image");
+
+    fireEvent.change(screen.getByLabelText("Prompt"), {
+      target: { value: "A quiet studio desk" }
+    });
+    fireEvent.change(screen.getByLabelText(/negative prompt/i), {
+      target: { value: "blur" }
+    });
+    fireEvent.change(screen.getByLabelText(/seed/i), {
+      target: { value: "42" }
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Generate" }));
+
+    expect(await screen.findByText(/generated 1 image/i)).toBeInTheDocument();
+    expect(screen.getByAltText(/generated result 1/i)).toHaveAttribute(
+      "src",
+      "https://cdn.example.com/image-1.png"
+    );
+    expect(screen.getByRole("link", { name: "Download" })).toHaveAttribute(
+      "download",
+      "image-1.png"
+    );
+    expect(fetch).toHaveBeenCalledWith(
+      "/api/images/generate",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({
+          providerId: "provider-1",
+          modelId: "gpt-image-1",
+          mode: "text-to-image",
+          prompt: "A quiet studio desk",
+          negativePrompt: "blur",
+          ratio: "1:1",
+          quality: "standard",
+          count: 1,
+          seed: 42
+        })
+      })
+    );
+    expect(JSON.stringify(vi.mocked(fetch).mock.calls)).not.toContain(
+      "sk-test-secret-value"
     );
   });
 });
