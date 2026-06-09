@@ -1,10 +1,10 @@
 # image2 Tool
 
-image2 Tool is a local-first image generation workbench. Phase 5 supports API provider configuration, connection testing, model discovery, text-to-image generation, image-to-image generation, and local generation history through a React web app and Fastify API server.
+image2 Tool is a local-first image generation workbench. Phase 6 supports API provider configuration, connection testing, model discovery, text-to-image generation, image-to-image generation, local generation history, and release-ready security controls through a React web app and Fastify API server.
 
 ## Current Phase
 
-Phase 5: generation history and experience polish.
+Phase 6: security review and release preparation.
 
 Included:
 
@@ -27,6 +27,10 @@ Included:
 - History actions to view results, reuse parameters, delete one item, clear all items, download images, and copy image URLs when returned
 - Polished empty, loading, error, and disabled button states
 - API Key redaction in responses and logs
+- Base URL SSRF checks with protocol, private address, DNS, and localhost controls
+- Explicit CORS allowlist behavior
+- Request timeouts for connection tests, model discovery, and generation
+- Security tests and release review documentation
 - lint, test, build, and dev scripts
 
 Not included yet:
@@ -45,11 +49,36 @@ Provider data is stored in server memory for this phase. API Keys are not return
 
 ```bash
 npm install
+cp .env.example .env
 npm run dev
 ```
 
 The web app runs on [http://localhost:5173](http://localhost:5173).
 The server runs on [http://localhost:3001](http://localhost:3001).
+
+On Windows PowerShell, copy the environment template with:
+
+```powershell
+Copy-Item .env.example .env
+```
+
+The current server reads environment variables from the process environment. If your shell does not automatically load `.env`, set the values in your terminal or process manager before starting the server.
+
+## Configuration
+
+Server environment variables:
+
+```txt
+HOST=127.0.0.1
+PORT=3001
+LOG_LEVEL=info
+CORS_ORIGIN=http://localhost:5173,http://127.0.0.1:5173
+ALLOW_LOCAL_PROVIDER_URLS=true
+```
+
+`CORS_ORIGIN` is a comma-separated allowlist for direct browser calls to the Fastify API. Production defaults to no cross-origin access unless this variable is set.
+
+`ALLOW_LOCAL_PROVIDER_URLS` controls whether provider Base URLs may target localhost. It defaults to enabled outside production and disabled in production. Keep it disabled for hosted deployments unless you intentionally need a local provider during development.
 
 ## Scripts
 
@@ -60,7 +89,10 @@ npm run dev:server # start only the Fastify API server
 npm run lint       # run ESLint
 npm test           # run package tests
 npm run build      # build all packages
+npm run check      # run lint, tests, and build
 ```
+
+Use `npm run check` as the release gate before shipping.
 
 ## Health Check
 
@@ -234,3 +266,33 @@ History supports:
 - Copy a generated image URL when the provider returned one
 
 For image-to-image history, the uploaded reference image bytes are not saved. Reusing an image-to-image item restores the parameters and asks the user to upload the reference image again before regenerating.
+
+## Security Notes
+
+- API Keys are accepted only by provider create, update, and test endpoints.
+- API Keys are held in server memory and are not returned by provider, model, generation, upload, or history flows.
+- Logs redact Authorization headers, `apiKey`, and uploaded image data URLs.
+- Error details are normalized, length-limited, and redacted before being returned.
+- Provider Base URLs are validated before save and before outbound provider calls.
+- HTTPS is required except for localhost development when local provider URLs are enabled.
+- Private network addresses are blocked by default, including hostnames that resolve to private addresses.
+- Uploads are limited to PNG, JPEG, and WebP images up to 5 MB.
+- See [docs/security-review.md](docs/security-review.md) for the full Phase 6 review.
+
+## FAQ
+
+### Why did my provider URL get blocked?
+
+The server blocks URLs that are not HTTPS, target private networks, or cannot be DNS-verified. For local development providers, set `ALLOW_LOCAL_PROVIDER_URLS=true` and use `http://localhost` or `http://127.0.0.1`.
+
+### Why does the provider disappear after restart?
+
+Provider configs and API Keys are stored in server memory for this MVP. Restarting the server clears them.
+
+### Is browser history encrypted?
+
+No. History is local to the browser profile and does not include API Keys or uploaded reference image bytes, but it may include generated image URLs.
+
+### Can I expose this server publicly?
+
+Not without deployment hardening. Set `NODE_ENV=production`, configure `CORS_ORIGIN`, keep `ALLOW_LOCAL_PROVIDER_URLS=false`, run behind HTTPS, and review `docs/security-review.md`.

@@ -15,6 +15,7 @@ import {
   recordProviderTest,
   updateProvider
 } from "./provider-store.js";
+import { assertSafeProviderUrl } from "./url-policy.js";
 
 function getProviderIdParam(params: unknown): string {
   if (
@@ -62,12 +63,22 @@ export async function registerProviderRoutes(server: FastifyInstance) {
   }));
 
   server.post("/api/providers", async (request, reply) => {
+    const body = (request.body ?? {}) as { baseUrl?: unknown };
+    if (typeof body.baseUrl === "string" && body.baseUrl.trim()) {
+      await assertSafeProviderUrl(body.baseUrl.trim());
+    }
+
     const provider = createProvider(request.body ?? {});
     return reply.code(201).send(provider);
   });
 
   server.put("/api/providers/:id", async (request) => {
     const id = getProviderIdParam(request.params);
+    const body = (request.body ?? {}) as { baseUrl?: unknown };
+    if (typeof body.baseUrl === "string" && body.baseUrl.trim()) {
+      await assertSafeProviderUrl(body.baseUrl.trim());
+    }
+
     return updateProvider(id, request.body ?? {});
   });
 

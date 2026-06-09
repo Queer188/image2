@@ -43,12 +43,12 @@ describe("provider routes", () => {
     const createResponse = await server.inject({
       method: "POST",
       url: "/api/providers",
-      payload: {
-        name: "Local Provider",
-        baseUrl: "https://api.example.com/v1",
-        apiKey
-      }
-    });
+        payload: {
+          name: "Local Provider",
+          baseUrl: "https://127.0.0.1/v1",
+          apiKey
+        }
+      });
 
     expect(createResponse.statusCode).toBe(201);
     expect(createResponse.body).not.toContain(apiKey);
@@ -56,7 +56,7 @@ describe("provider routes", () => {
     const provider = createResponse.json();
     expect(provider).toMatchObject({
       name: "Local Provider",
-      baseUrl: "https://api.example.com/v1",
+      baseUrl: "https://127.0.0.1/v1",
       lastTestStatus: "untested"
     });
     expect(provider.apiKeyRef).toEqual(expect.any(String));
@@ -170,6 +170,56 @@ describe("provider routes", () => {
       });
     } finally {
       process.env.NODE_ENV = previousNodeEnv;
+    }
+  });
+
+  it("blocks private network provider URLs when saving", async () => {
+    const server = buildServer();
+    const response = await server.inject({
+      method: "POST",
+      url: "/api/providers",
+      payload: {
+        name: "Private Provider",
+        baseUrl: "https://192.168.1.10/v1",
+        apiKey: "sk-private-secret"
+      }
+    });
+
+    expect(response.statusCode).toBe(400);
+    expect(response.body).not.toContain("sk-private-secret");
+    expect(response.json()).toMatchObject({
+      error: {
+        code: "PROVIDER_URL_BLOCKED",
+        message: "Provider URL cannot target private network addresses."
+      }
+    });
+  });
+
+  it("blocks localhost provider URLs when the local URL switch is disabled", async () => {
+    const previousAllowLocal = process.env.ALLOW_LOCAL_PROVIDER_URLS;
+    process.env.ALLOW_LOCAL_PROVIDER_URLS = "false";
+
+    try {
+      const server = buildServer();
+      const response = await server.inject({
+        method: "POST",
+        url: "/api/providers",
+        payload: {
+          name: "Local Provider",
+          baseUrl: "http://127.0.0.1:3001/v1",
+          apiKey: "sk-local-secret"
+        }
+      });
+
+      expect(response.statusCode).toBe(400);
+      expect(response.body).not.toContain("sk-local-secret");
+      expect(response.json()).toMatchObject({
+        error: {
+          code: "PROVIDER_URL_BLOCKED"
+        }
+      });
+    } finally {
+      process.env.ALLOW_LOCAL_PROVIDER_URLS = previousAllowLocal;
     }
   });
 });
