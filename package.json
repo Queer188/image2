@@ -8,7 +8,8 @@
     "packages/*"
   ],
   "scripts": {
-    "dev": "concurrently -n web,server -c green,cyan \"npm run dev -w @image2/web\" \"npm run dev -w @image2/server\"",
+    "dev": "node scripts/dev-local.mjs",
+    "dev:raw": "concurrently -n web,server -c green,cyan \"npm run dev -w @image2/web\" \"npm run dev -w @image2/server\"",
     "dev:web": "npm run dev -w @image2/web",
     "dev:server": "npm run dev -w @image2/server",
     "build": "npm run build -w @image2/shared && npm run build -w @image2/server && npm run build -w @image2/web",
