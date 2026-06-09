@@ -6,12 +6,13 @@ import type {
 } from "@image2/shared";
 import type { FastifyInstance } from "fastify";
 import { AppError } from "./errors.js";
+import { saveHistoryRecord } from "./history-store.js";
 import {
   getUploadedImage,
   MAX_UPLOAD_BODY_BYTES,
   saveUploadedImage
 } from "./image-upload-store.js";
-import { getProviderRuntimeConfig } from "./provider-store.js";
+import { getProviderConfig, getProviderRuntimeConfig } from "./provider-store.js";
 import type { ImageProviderGenerateRequest } from "./providers/base.js";
 import { image2CompatibleAdapter } from "./providers/image2-compatible.js";
 
@@ -86,6 +87,7 @@ function resolveGenerateRequest(
   return {
     providerId,
     modelId,
+    modelName: optionalTrimmedString(body.modelName),
     mode,
     prompt,
     negativePrompt: optionalTrimmedString(body.negativePrompt),
@@ -119,12 +121,25 @@ export async function registerImageRoutes(server: FastifyInstance) {
         (request.body ?? {}) as Partial<GenerateImageRequest>
       );
       const config = getProviderRuntimeConfig(generationRequest.providerId);
+      const provider = getProviderConfig(generationRequest.providerId);
       const adapterRequest: ImageProviderGenerateRequest = {
         ...generationRequest
       };
+      let inputImageMetadata:
+        | {
+            fileName?: string;
+            mimeType: "image/png" | "image/jpeg" | "image/webp";
+            sizeBytes: number;
+          }
+        | undefined;
 
       if (generationRequest.mode === "image-to-image") {
         const inputImage = getUploadedImage(generationRequest.inputImageId ?? "");
+        inputImageMetadata = {
+          fileName: inputImage.fileName,
+          mimeType: inputImage.mimeType,
+          sizeBytes: inputImage.sizeBytes
+        };
         adapterRequest.inputImage = {
           id: inputImage.id,
           mimeType: inputImage.mimeType,
@@ -136,10 +151,29 @@ export async function registerImageRoutes(server: FastifyInstance) {
         config,
         adapterRequest
       );
+      const generatedAt = new Date().toISOString();
+      const historyRecord = saveHistoryRecord({
+        createdAt: generatedAt,
+        providerId: provider.id,
+        providerName: provider.name,
+        modelId: generationRequest.modelId,
+        modelName: generationRequest.modelName ?? generationRequest.modelId,
+        mode: generationRequest.mode,
+        prompt: generationRequest.prompt,
+        negativePrompt: generationRequest.negativePrompt,
+        ratio: generationRequest.ratio,
+        quality: generationRequest.quality,
+        count: generationRequest.count,
+        seed: generationRequest.seed,
+        strength: generationRequest.strength,
+        inputImage: inputImageMetadata,
+        images
+      });
 
       return {
         images,
-        generatedAt: new Date().toISOString()
+        generatedAt,
+        historyRecord
       };
     }
   );

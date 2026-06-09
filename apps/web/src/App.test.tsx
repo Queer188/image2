@@ -39,6 +39,10 @@ describe("App", () => {
       await jsonResponse({
         providers: []
       })
+    ).mockResolvedValueOnce(
+      await jsonResponse({
+        records: []
+      })
     );
 
     render(<App />);
@@ -56,6 +60,11 @@ describe("App", () => {
       .mockResolvedValueOnce(
         await jsonResponse({
           providers: []
+        })
+      )
+      .mockResolvedValueOnce(
+        await jsonResponse({
+          records: []
         })
       )
       .mockResolvedValueOnce(await jsonResponse(provider, { status: 201 }))
@@ -107,6 +116,12 @@ describe("App", () => {
         return jsonResponse({
           models: [],
           fetchedAt: "2026-06-09T00:00:02.000Z"
+        });
+      }
+
+      if (url === "/api/history") {
+        return jsonResponse({
+          records: []
         });
       }
 
@@ -169,6 +184,12 @@ describe("App", () => {
         });
       }
 
+      if (url === "/api/history") {
+        return jsonResponse({
+          records: []
+        });
+      }
+
       throw new Error(`Unexpected fetch ${url}`);
     });
 
@@ -209,6 +230,12 @@ describe("App", () => {
             }
           ],
           fetchedAt: "2026-06-09T00:00:02.000Z"
+        });
+      }
+
+      if (url === "/api/history") {
+        return jsonResponse({
+          records: []
         });
       }
 
@@ -258,21 +285,17 @@ describe("App", () => {
       "image-1.png"
     );
     expect(screen.getByRole("heading", { name: "A quiet studio desk" })).toBeInTheDocument();
-    expect(window.localStorage.getItem("image2:generation-history:v1")).not.toContain(
-      "sk-test-secret-value"
-    );
-    expect(window.localStorage.getItem("image2:generation-history:v1")).not.toContain(
-      "apiKey"
-    );
+    expect(window.localStorage.getItem("image2:generation-history:v1")).toBeNull();
     expect(fetch).toHaveBeenCalledWith(
       "/api/images/generate",
       expect.objectContaining({
         method: "POST",
-        body: JSON.stringify({
-          providerId: "provider-1",
-          modelId: "gpt-image-1",
-          mode: "text-to-image",
-          prompt: "A quiet studio desk",
+          body: JSON.stringify({
+            providerId: "provider-1",
+            modelId: "gpt-image-1",
+            modelName: "GPT Image",
+            mode: "text-to-image",
+            prompt: "A quiet studio desk",
           negativePrompt: "blur",
           ratio: "1:1",
           quality: "standard",
@@ -313,6 +336,12 @@ describe("App", () => {
             }
           ],
           fetchedAt: "2026-06-09T00:00:02.000Z"
+        });
+      }
+
+      if (url === "/api/history") {
+        return jsonResponse({
+          records: []
         });
       }
 
@@ -387,6 +416,7 @@ describe("App", () => {
         body: JSON.stringify({
           providerId: "provider-1",
           modelId: "image-edit-pro",
+          modelName: "Image Edit Pro",
           mode: "image-to-image",
           prompt: "Change the wall color",
           negativePrompt: "blur",
@@ -400,13 +430,11 @@ describe("App", () => {
       })
     );
     expect(generateCall?.[1]?.body?.toString()).not.toContain("data:image/png");
-    expect(window.localStorage.getItem("image2:generation-history:v1")).not.toContain(
-      "data:image/png"
-    );
+    expect(window.localStorage.getItem("image2:generation-history:v1")).toBeNull();
   });
 
   it("reuses and deletes a saved text-to-image history item", async () => {
-    vi.mocked(fetch).mockImplementation(async (input) => {
+    vi.mocked(fetch).mockImplementation(async (input, init) => {
       const url = input.toString();
 
       if (url === "/api/providers") {
@@ -427,6 +455,20 @@ describe("App", () => {
           ],
           fetchedAt: "2026-06-09T00:00:02.000Z"
         });
+      }
+
+      if (url === "/api/history") {
+        return jsonResponse({
+          records: []
+        });
+      }
+
+      if (
+        url.startsWith("/api/history/") &&
+        typeof init?.method === "string" &&
+        init.method === "DELETE"
+      ) {
+        return new Response(null, { status: 204 });
       }
 
       if (url === "/api/images/generate") {
@@ -472,8 +514,73 @@ describe("App", () => {
 
     const deleteButtons = screen.getAllByRole("button", { name: "Delete" });
     fireEvent.click(deleteButtons[deleteButtons.length - 1]);
-    expect(screen.queryByRole("heading", { name: "A reusable prompt" }))
-      .not.toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.queryByRole("heading", { name: "A reusable prompt" }))
+        .not.toBeInTheDocument();
+    });
     expect(screen.getByText(/successful generations will be saved/i)).toBeInTheDocument();
+  });
+
+  it("migrates existing localStorage history to server history", async () => {
+    const localRecord = {
+      id: "local-history-1",
+      createdAt: "2026-06-09T00:00:00.000Z",
+      providerId: "provider-1",
+      providerName: "Local Provider",
+      modelId: "gpt-image-1",
+      modelName: "GPT Image",
+      parameters: {
+        mode: "text-to-image",
+        prompt: "Migrated local prompt",
+        ratio: "1:1",
+        quality: "standard",
+        count: 1
+      },
+      images: [
+        {
+          id: "image-1",
+          url: "https://cdn.example.com/migrated.png",
+          metadata: {
+            index: 0
+          }
+        }
+      ]
+    };
+    window.localStorage.setItem(
+      "image2:generation-history:v1",
+      JSON.stringify([localRecord])
+    );
+
+    vi.mocked(fetch).mockImplementation(async (input) => {
+      const url = input.toString();
+
+      if (url === "/api/providers") {
+        return jsonResponse({
+          providers: []
+        });
+      }
+
+      if (url === "/api/history/import") {
+        return jsonResponse({
+          imported: 1,
+          records: [localRecord]
+        });
+      }
+
+      throw new Error(`Unexpected fetch ${url}`);
+    });
+
+    render(<App />);
+
+    expect(
+      await screen.findByRole("heading", { name: "Migrated local prompt" })
+    ).toBeInTheDocument();
+    expect(fetch).toHaveBeenCalledWith(
+      "/api/history/import",
+      expect.objectContaining({
+        method: "POST"
+      })
+    );
+    expect(window.localStorage.getItem("image2:generation-history:v1")).toBeNull();
   });
 });

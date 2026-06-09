@@ -1,13 +1,23 @@
 import { createServer } from "node:http";
+import { mkdtempSync } from "node:fs";
 import type { AddressInfo } from "node:net";
-import { afterEach, describe, expect, it } from "vitest";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { buildServer } from "../src/app.js";
+import { closeHistoryStoreForTests } from "../src/history-store.js";
 import { clearUploadedImagesForTests } from "../src/image-upload-store.js";
 import { clearProvidersForTests } from "../src/provider-store.js";
+
+beforeEach(() => {
+  process.env.IMAGE2_DATA_DIR = mkdtempSync(join(tmpdir(), "image2-history-"));
+});
 
 afterEach(() => {
   clearProvidersForTests();
   clearUploadedImagesForTests();
+  closeHistoryStoreForTests({ removeDataDir: true });
+  delete process.env.IMAGE2_DATA_DIR;
 });
 
 async function withHttpServer(

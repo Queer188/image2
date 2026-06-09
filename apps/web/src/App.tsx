@@ -6,7 +6,9 @@ import type {
   GenerationHistoryRecord,
   GenerateImageMode,
   GenerateImageResponse,
+  HistoryListResponse,
   ImageModel,
+  ImportHistoryResponse,
   ModelListResponse,
   ProviderConfig,
   ProviderListResponse,
@@ -61,6 +63,7 @@ const qualityOptions = ["standard", "hd", "ultra"];
 const MAX_UPLOAD_BYTES = 5 * 1024 * 1024;
 const allowedUploadMimeTypes = ["image/png", "image/jpeg", "image/webp"];
 const HISTORY_STORAGE_KEY = "image2:generation-history:v1";
+const HISTORY_MIGRATION_KEY = "image2:generation-history:v1:migrated";
 const MAX_HISTORY_ITEMS = 50;
 
 async function parseApiError(response: Response): Promise<string> {
@@ -124,6 +127,10 @@ function historyImageDownloadName(
   return `${record.id}-${downloadName(image, index)}`;
 }
 
+function imageHref(image: GeneratedImage | undefined): string | undefined {
+  return image?.url ?? image?.localPath;
+}
+
 function createHistoryId(): string {
   if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
     return crypto.randomUUID();
@@ -160,17 +167,6 @@ function loadGenerationHistory(): GenerationHistoryRecord[] {
   } catch {
     return [];
   }
-}
-
-function saveGenerationHistory(records: GenerationHistoryRecord[]) {
-  if (typeof window === "undefined") {
-    return;
-  }
-
-  window.localStorage.setItem(
-    HISTORY_STORAGE_KEY,
-    JSON.stringify(records.slice(0, MAX_HISTORY_ITEMS))
-  );
 }
 
 function formatMode(mode: GenerateImageMode): string {
@@ -228,7 +224,7 @@ export function App() {
   const [generatedImages, setGeneratedImages] = useState<GeneratedImage[]>([]);
   const [generationHistory, setGenerationHistory] = useState<
     GenerationHistoryRecord[]
-  >(() => loadGenerationHistory());
+  >([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [isTesting, setIsTesting] = useState(false);
@@ -333,13 +329,77 @@ export function App() {
     }
   }
 
-  useEffect(() => {
-    void loadProviders();
-  }, []);
+  async function importLocalHistoryIfNeeded(): Promise<
+    ImportHistoryResponse | undefined
+  > {
+    if (typeof window === "undefined") {
+      return undefined;
+    }
+
+    if (window.localStorage.getItem(HISTORY_MIGRATION_KEY)) {
+      return undefined;
+    }
+
+    const records = loadGenerationHistory();
+    if (records.length === 0) {
+      window.localStorage.setItem(HISTORY_MIGRATION_KEY, "true");
+      return undefined;
+    }
+
+    const result = await readJson<ImportHistoryResponse>(
+      await fetch("/api/history/import", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json"
+        },
+        body: JSON.stringify({
+          records: records.slice(0, MAX_HISTORY_ITEMS)
+        })
+      })
+    );
+
+    window.localStorage.setItem(HISTORY_MIGRATION_KEY, "true");
+    window.localStorage.removeItem(HISTORY_STORAGE_KEY);
+    return result;
+  }
+
+  async function loadHistory() {
+    setHistoryError(undefined);
+
+    try {
+      const migrated = await importLocalHistoryIfNeeded();
+      if (migrated) {
+        setGenerationHistory(migrated.records.slice(0, MAX_HISTORY_ITEMS));
+        setHistoryMessage(
+          migrated.imported > 0
+            ? `Imported ${migrated.imported} saved history item(s).`
+            : "Saved history is already up to date."
+        );
+        return;
+      }
+
+      const payload = await readJson<HistoryListResponse>(await fetch("/api/history"));
+      setGenerationHistory(payload.records.slice(0, MAX_HISTORY_ITEMS));
+    } catch (loadError) {
+      const fallback = loadGenerationHistory();
+      if (fallback.length > 0) {
+        setGenerationHistory(fallback.slice(0, MAX_HISTORY_ITEMS));
+        setHistoryError(
+          "Server history is unavailable. Showing browser history until the server can be reached."
+        );
+        return;
+      }
+
+      setHistoryError(
+        loadError instanceof Error ? loadError.message : "History could not be loaded."
+      );
+    }
+  }
 
   useEffect(() => {
-    saveGenerationHistory(generationHistory);
-  }, [generationHistory]);
+    void loadProviders();
+    void loadHistory();
+  }, []);
 
   useEffect(() => {
     void loadModels(selectedProvider?.id);
@@ -562,17 +622,17 @@ export function App() {
     setError(undefined);
   }
 
-  function addGenerationHistoryRecord(
+  function createGenerationHistoryRecord(
     images: GeneratedImage[],
     generatedAt: string,
     seed: number | undefined,
     trimmedPrompt: string
-  ) {
+  ): GenerationHistoryRecord | undefined {
     if (!selectedProvider || !selectedModel) {
-      return;
+      return undefined;
     }
 
-    const record: GenerationHistoryRecord = {
+    return {
       id: createHistoryId(),
       createdAt: generatedAt,
       providerId: selectedProvider.id,
@@ -599,10 +659,6 @@ export function App() {
       },
       images
     };
-
-    setGenerationHistory((current) => [record, ...current].slice(0, MAX_HISTORY_ITEMS));
-    setHistoryMessage("Generation saved to history.");
-    setHistoryError(undefined);
   }
 
   function viewHistoryRecord(record: GenerationHistoryRecord) {
@@ -654,18 +710,46 @@ export function App() {
     setHistoryError(undefined);
   }
 
-  function deleteHistoryRecord(recordId: string) {
-    setGenerationHistory((current) =>
-      current.filter((record) => record.id !== recordId)
-    );
-    setHistoryMessage("History item deleted.");
-    setHistoryError(undefined);
+  async function deleteHistoryRecord(recordId: string) {
+    try {
+      const response = await fetch(`/api/history/${encodeURIComponent(recordId)}`, {
+        method: "DELETE"
+      });
+      if (!response.ok) {
+        throw new Error(await parseApiError(response));
+      }
+
+      setGenerationHistory((current) =>
+        current.filter((record) => record.id !== recordId)
+      );
+      setHistoryMessage("History item deleted.");
+      setHistoryError(undefined);
+    } catch (deleteError) {
+      setHistoryError(
+        deleteError instanceof Error ? deleteError.message : "History delete failed."
+      );
+      setHistoryMessage(undefined);
+    }
   }
 
-  function clearHistory() {
-    setGenerationHistory([]);
-    setHistoryMessage("History cleared.");
-    setHistoryError(undefined);
+  async function clearHistory() {
+    try {
+      const response = await fetch("/api/history", {
+        method: "DELETE"
+      });
+      if (!response.ok) {
+        throw new Error(await parseApiError(response));
+      }
+
+      setGenerationHistory([]);
+      setHistoryMessage("History cleared.");
+      setHistoryError(undefined);
+    } catch (clearError) {
+      setHistoryError(
+        clearError instanceof Error ? clearError.message : "History clear failed."
+      );
+      setHistoryMessage(undefined);
+    }
   }
 
   async function copyImageUrl(url: string) {
@@ -732,6 +816,7 @@ export function App() {
           body: JSON.stringify({
             providerId: selectedProvider.id,
             modelId: selectedModel.id,
+            modelName: selectedModel.name,
             mode: activeMode,
             prompt: trimmedPrompt,
             negativePrompt: generationForm.negativePrompt.trim() || undefined,
@@ -748,12 +833,25 @@ export function App() {
 
       setGeneratedImages(result.images);
       setGenerationMessage(`Generated ${result.images.length} image(s).`);
-      addGenerationHistoryRecord(
-        result.images,
-        result.generatedAt,
-        seed,
-        trimmedPrompt
-      );
+      const historyRecord =
+        result.historyRecord ??
+        createGenerationHistoryRecord(
+          result.images,
+          result.generatedAt,
+          seed,
+          trimmedPrompt
+        );
+
+      if (historyRecord) {
+        setGenerationHistory((current) =>
+          [historyRecord, ...current.filter((record) => record.id !== historyRecord.id)].slice(
+            0,
+            MAX_HISTORY_ITEMS
+          )
+        );
+        setHistoryMessage("Generation saved to history.");
+        setHistoryError(undefined);
+      }
     } catch (generateError) {
       setGenerationError(
         generateError instanceof Error ? generateError.message : "Generation failed."
@@ -1217,27 +1315,30 @@ export function App() {
 
           {generatedImages.length > 0 ? (
             <div className="gallery-grid">
-              {generatedImages.map((image, index) => (
-                <article className="image-card" key={image.id}>
-                  {image.url ? (
-                    <a href={image.url} rel="noreferrer" target="_blank">
-                      <img
-                        alt={`Generated result ${index + 1}`}
-                        src={image.url}
-                      />
-                    </a>
-                  ) : (
-                    <div className="image-placeholder">No preview URL</div>
-                  )}
-                  <div className="image-actions">
-                    {image.url ? (
-                      <>
-                        <a href={image.url} rel="noreferrer" target="_blank">
-                          Preview
-                        </a>
-                        <a download={downloadName(image, index)} href={image.url}>
-                          Download
-                        </a>
+              {generatedImages.map((image, index) => {
+                const href = imageHref(image);
+
+                return (
+                  <article className="image-card" key={image.id}>
+                    {href ? (
+                      <a href={href} rel="noreferrer" target="_blank">
+                        <img alt={`Generated result ${index + 1}`} src={href} />
+                      </a>
+                    ) : (
+                      <div className="image-placeholder">No preview URL</div>
+                    )}
+                    <div className="image-actions">
+                      {href ? (
+                        <>
+                          <a href={href} rel="noreferrer" target="_blank">
+                            Preview
+                          </a>
+                          <a download={downloadName(image, index)} href={href}>
+                            Download
+                          </a>
+                        </>
+                      ) : null}
+                      {image.url ? (
                         <button
                           className="link-button"
                           onClick={() => void copyImageUrl(image.url ?? "")}
@@ -1245,11 +1346,11 @@ export function App() {
                         >
                           Copy URL
                         </button>
-                      </>
-                    ) : null}
-                  </div>
-                </article>
-              ))}
+                      ) : null}
+                    </div>
+                  </article>
+                );
+              })}
             </div>
           ) : null}
         </section>
@@ -1264,7 +1365,7 @@ export function App() {
           <button
             className="secondary"
             disabled={generationHistory.length === 0}
-            onClick={clearHistory}
+            onClick={() => void clearHistory()}
             type="button"
           >
             Clear history
@@ -1282,96 +1383,105 @@ export function App() {
 
         {generationHistory.length > 0 ? (
           <div className="history-list">
-            {generationHistory.map((record) => (
-              <article className="history-card" key={record.id}>
-                <div className="history-summary">
-                  {record.images[0]?.url ? (
-                    <img
-                      alt=""
-                      className="history-thumb"
-                      src={record.images[0].url}
-                    />
-                  ) : (
-                    <div className="history-thumb placeholder">No URL</div>
-                  )}
-                  <div>
-                    <h3>{record.parameters.prompt}</h3>
-                    <p>
-                      {formatMode(record.parameters.mode)} - {record.modelName} -{" "}
-                      {formatDate(record.createdAt)}
-                    </p>
-                    <p>
-                      Ratio {record.parameters.ratio ?? "n/a"} - Quality{" "}
-                      {record.parameters.quality ?? "n/a"} - Count{" "}
-                      {record.parameters.count ?? record.images.length}
-                      {record.parameters.seed !== undefined
-                        ? ` - Seed ${record.parameters.seed}`
-                        : ""}
-                    </p>
-                    {record.parameters.inputImage ? (
+            {generationHistory.map((record) => {
+              const firstImageHref = imageHref(record.images[0]);
+
+              return (
+                <article className="history-card" key={record.id}>
+                  <div className="history-summary">
+                    {firstImageHref ? (
+                      <img alt="" className="history-thumb" src={firstImageHref} />
+                    ) : (
+                      <div className="history-thumb placeholder">No URL</div>
+                    )}
+                    <div>
+                      <h3>{record.parameters.prompt}</h3>
                       <p>
-                        Reference:{" "}
-                        {record.parameters.inputImage.fileName ??
-                          record.parameters.inputImage.mimeType}{" "}
-                        ({Math.ceil(record.parameters.inputImage.sizeBytes / 1024)} KB)
+                        {formatMode(record.parameters.mode)} - {record.modelName} -{" "}
+                        {formatDate(record.createdAt)}
                       </p>
-                    ) : null}
-                  </div>
-                </div>
-
-                <div className="history-actions">
-                  <button onClick={() => viewHistoryRecord(record)} type="button">
-                    View results
-                  </button>
-                  <button
-                    className="secondary"
-                    onClick={() => reuseHistoryRecord(record)}
-                    type="button"
-                  >
-                    Reuse parameters
-                  </button>
-                  <button
-                    className="secondary"
-                    onClick={() => deleteHistoryRecord(record.id)}
-                    type="button"
-                  >
-                    Delete
-                  </button>
-                </div>
-
-                <div className="history-images">
-                  {record.images.map((image, index) => (
-                    <div className="history-image-row" key={`${record.id}-${image.id}`}>
-                      <span>Image {index + 1}</span>
-                      <div className="image-actions">
-                        {image.url ? (
-                          <>
-                            <a href={image.url} rel="noreferrer" target="_blank">
-                              Preview
-                            </a>
-                            <a
-                              download={historyImageDownloadName(record, image, index)}
-                              href={image.url}
-                            >
-                              Download
-                            </a>
-                            <button
-                              className="link-button"
-                              onClick={() => void copyImageUrl(image.url ?? "")}
-                              type="button"
-                            >
-                              Copy URL
-                            </button>
-                          </>
-                        ) : (
-                          <span className="muted-text">No image URL returned</span>
-                        )}
-                      </div>
+                      <p>
+                        Ratio {record.parameters.ratio ?? "n/a"} - Quality{" "}
+                        {record.parameters.quality ?? "n/a"} - Count{" "}
+                        {record.parameters.count ?? record.images.length}
+                        {record.parameters.seed !== undefined
+                          ? ` - Seed ${record.parameters.seed}`
+                          : ""}
+                      </p>
+                      {record.parameters.inputImage ? (
+                        <p>
+                          Reference:{" "}
+                          {record.parameters.inputImage.fileName ??
+                            record.parameters.inputImage.mimeType}{" "}
+                          ({Math.ceil(record.parameters.inputImage.sizeBytes / 1024)} KB)
+                        </p>
+                      ) : null}
                     </div>
-                  ))}
-                </div>
-              </article>
-            ))}
+                  </div>
+
+                  <div className="history-actions">
+                    <button onClick={() => viewHistoryRecord(record)} type="button">
+                      View results
+                    </button>
+                    <button
+                      className="secondary"
+                      onClick={() => reuseHistoryRecord(record)}
+                      type="button"
+                    >
+                      Reuse parameters
+                    </button>
+                    <button
+                      className="secondary"
+                      onClick={() => void deleteHistoryRecord(record.id)}
+                      type="button"
+                    >
+                      Delete
+                    </button>
+                  </div>
+
+                  <div className="history-images">
+                    {record.images.map((image, index) => {
+                      const href = imageHref(image);
+
+                      return (
+                        <div
+                          className="history-image-row"
+                          key={`${record.id}-${image.id}`}
+                        >
+                          <span>Image {index + 1}</span>
+                          <div className="image-actions">
+                            {href ? (
+                              <>
+                                <a href={href} rel="noreferrer" target="_blank">
+                                  Preview
+                                </a>
+                                <a
+                                  download={historyImageDownloadName(record, image, index)}
+                                  href={href}
+                                >
+                                  Download
+                                </a>
+                              </>
+                            ) : (
+                              <span className="muted-text">No image URL returned</span>
+                            )}
+                            {image.url ? (
+                              <button
+                                className="link-button"
+                                onClick={() => void copyImageUrl(image.url ?? "")}
+                                type="button"
+                              >
+                                Copy URL
+                              </button>
+                            ) : null}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </article>
+              );
+            })}
           </div>
         ) : null}
       </section>

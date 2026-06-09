@@ -41,6 +41,15 @@ export function listProviders(): ProviderConfig[] {
   );
 }
 
+export function getProviderConfig(id: string): ProviderConfig {
+  const provider = providers.get(id);
+  if (!provider) {
+    throw new AppError("PROVIDER_NOT_FOUND", "Provider was not found.", 404);
+  }
+
+  return provider;
+}
+
 export function createProvider(value: Partial<CreateProviderRequest>): ProviderConfig {
   assertCreateRequest(value);
   const input = normalizeProviderInput(value);
@@ -119,10 +128,7 @@ export function deleteProvider(id: string): void {
 }
 
 export function getProviderRuntimeConfig(id: string): ProviderRuntimeConfig {
-  const provider = providers.get(id);
-  if (!provider) {
-    throw new AppError("PROVIDER_NOT_FOUND", "Provider was not found.", 404);
-  }
+  const provider = getProviderConfig(id);
 
   const apiKey = apiKeys.get(provider.apiKeyRef);
   if (!apiKey) {

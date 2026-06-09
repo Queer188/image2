@@ -1,8 +1,8 @@
 # API Contract
 
-## Phase 5 Scope
+## Phase 8 Scope
 
-Phase 5 defines provider configuration, connection testing, model discovery, text-to-image generation, reference image upload, image-to-image generation, and browser-local generation history.
+Phase 8 defines provider configuration, connection testing, model discovery, text-to-image generation, reference image upload, image-to-image generation, and SQLite-backed server generation history.
 
 ## Provider Types
 
@@ -33,6 +33,10 @@ POST   /api/providers/test
 POST   /api/models/list
 POST   /api/images/upload
 POST   /api/images/generate
+GET    /api/history
+POST   /api/history/import
+DELETE /api/history/:id
+DELETE /api/history
 ```
 
 Create request:
@@ -119,6 +123,7 @@ type GenerateImageMode = "text-to-image" | "image-to-image";
 type GenerateImageRequest = {
   providerId: string;
   modelId: string;
+  modelName?: string;
   mode: GenerateImageMode;
   prompt: string;
   negativePrompt?: string;
@@ -157,6 +162,7 @@ type GeneratedImage = {
 type GenerateImageResponse = {
   images: GeneratedImage[];
   generatedAt: string;
+  historyRecord?: GenerationHistoryRecord;
 };
 
 type UploadImageResponse = {
@@ -168,9 +174,9 @@ type UploadImageResponse = {
 
 `POST /api/images/generate` accepts `mode: "text-to-image"` or `mode: "image-to-image"`. Image-to-image requests must include `inputImageId` and `strength` between `0` and `1`.
 
-## Local History Types
+## History Types
 
-Generation history is a browser-local feature. There is no server history endpoint in Phase 5.
+Generation history is a server feature backed by SQLite in the configured data directory. The browser imports old localStorage history through `POST /api/history/import` and no longer writes new history to localStorage.
 
 ```ts
 type GenerationHistoryInputImage = {
@@ -204,6 +210,25 @@ type GenerationHistoryRecord = {
 ```
 
 History records must not contain plaintext API Keys, Authorization headers, provider runtime secrets, or uploaded reference image data URLs. Image-to-image records may keep reference image file metadata so users can identify which file to upload again.
+
+History list response:
+
+```ts
+type HistoryListResponse = {
+  records: GenerationHistoryRecord[];
+};
+
+type ImportHistoryRequest = {
+  records: GenerationHistoryRecord[];
+};
+
+type ImportHistoryResponse = {
+  imported: number;
+  records: GenerationHistoryRecord[];
+};
+```
+
+`GET /api/history` returns records ordered by newest first. `DELETE /api/history/:id` deletes a single item and associated generated local assets. `DELETE /api/history` clears all items and associated generated local assets.
 
 ## Errors
 

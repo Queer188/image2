@@ -1,10 +1,10 @@
 # Security Review
 
-## Phase 6 Release Readiness
+## Phase 8 Persistent History Review
 
 Status: ready for local MVP release after `npm run check` passes.
 
-This review covers the current React frontend, Fastify API server, provider adapters, upload handling, and browser-local generation history.
+This review covers the current React frontend, Fastify API server, provider adapters, upload handling, SQLite-backed generation history, and generated result asset storage.
 
 ## Findings And Controls
 
@@ -16,8 +16,10 @@ This review covers the current React frontend, Fastify API server, provider adap
 - Model discovery and image generation accept `providerId`; the server resolves the API Key internally.
 - Fastify logging redacts Authorization headers, `apiKey`, upload `dataUrl`, and nested input image data URLs.
 - Public error details are sanitized for known secrets, bearer tokens, API key fields, token fields, `sk-*` key patterns, and image data URLs.
-- Browser-local history stores generation parameters, provider/model names, generated image metadata/URLs, and reference image metadata only.
-- Browser-local history does not store API Keys, Authorization headers, provider runtime configs, uploaded reference image bytes, or uploaded data URLs.
+- Server history stores generation parameters, provider/model names, generated image metadata/URLs, generated local asset paths, and reference image metadata only.
+- Server history does not store API Keys, Authorization headers, provider runtime configs, uploaded reference image bytes, or uploaded reference image data URLs.
+- Browser `localStorage` is no longer used for new generation history. Existing `image2:generation-history:v1` records are imported to the server once and removed only after a successful import.
+- Imported history is rebuilt from whitelisted fields. Sensitive metadata keys such as `apiKey`, Authorization, token, secret, and data URL fields are stripped before persistence.
 
 ### Provider Base URL And SSRF
 
@@ -38,6 +40,17 @@ This review covers the current React frontend, Fastify API server, provider adap
 - Uploaded image bytes must be non-empty and 5 MB or smaller.
 - Upload route body size is capped to accommodate a 5 MB base64 data URL plus JSON overhead.
 - Upload responses return metadata and an upload id only; image bytes remain server-side in memory.
+- Uploaded reference images are not written to SQLite or the data directory in this phase.
+
+### History And Generated Assets
+
+- Generation history is stored in `IMAGE2_DATA_DIR/image2.sqlite`, defaulting to `.image2-data/image2.sqlite` when unset.
+- The history schema separates `generation_history` and `generation_images`.
+- Provider-returned generated `data:image/png`, `data:image/jpeg`, and `data:image/webp` result URLs are decoded and saved below `IMAGE2_DATA_DIR/assets/generated/YYYY/MM/`.
+- Generated asset filenames use internal UUIDs, not prompts, provider names, model names, or uploaded filenames.
+- Generated local assets are served only through `/api/history/images/:id/file`, which resolves the asset path from SQLite and checks it remains inside the configured data directory.
+- Remote generated image URLs are stored as URLs only. The server does not fetch remote result URLs, avoiding new SSRF exposure for result retention in this phase.
+- Deleting one history item or clearing history also removes generated local asset files associated with those history rows.
 
 ### Errors And Logs
 
@@ -77,7 +90,9 @@ Current server tests cover:
 - Uploads reject files over 5 MB.
 - Upload responses do not return image data.
 - Generation responses do not return API Keys or uploaded reference bytes.
-- Browser tests confirm history does not contain API Keys, `apiKey`, or uploaded reference data URLs.
+- Server tests confirm history persists across store restart, delete/clear works, and history responses do not contain API Keys.
+- Server import tests confirm sensitive metadata and image data URLs are not preserved from browser history imports.
+- Browser tests confirm new generations do not write the old localStorage history key and old localStorage history migrates without breaking the UI.
 
 Run the full release gate:
 
@@ -96,6 +111,7 @@ Important variables:
 - `LOG_LEVEL`: Fastify log level, default `info`
 - `CORS_ORIGIN`: comma-separated allowed origins for direct browser API calls
 - `ALLOW_LOCAL_PROVIDER_URLS`: set `true` only when intentionally calling localhost providers
+- `IMAGE2_DATA_DIR`: local SQLite database and generated result asset directory
 
 ## Known Limitations
 
@@ -103,6 +119,7 @@ Important variables:
 - There is no encrypted durable provider storage yet.
 - Uploaded images are held in memory and are lost on restart.
 - Uploaded images are not yet garbage-collected by age or total memory pressure.
-- Browser-local history is not encrypted and may include generated image URLs or provider-returned data URLs.
-- Provider result URLs are displayed and linked by the browser; future releases should add stricter result URL validation or local asset storage if result retention becomes a release requirement.
+- SQLite history is not encrypted and may include prompts, generated image remote URLs, and local generated asset paths.
+- Provider remote result URLs are displayed and linked by the browser; future releases should add stricter result URL validation or opt-in remote URL copy-down if remote result retention becomes a release requirement.
+- Generated result files can consume local disk space. This phase deletes associated generated assets when history is deleted, but does not implement quota-based cleanup.
 - DNS validation reduces SSRF risk but cannot eliminate all DNS rebinding risks for long-running sessions. Provider fetches revalidate URLs at call time and do not follow redirects.
