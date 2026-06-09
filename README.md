@@ -52,7 +52,7 @@ On Windows PowerShell:
 Copy-Item .env.example .env
 ```
 
-The server reads environment variables from the process environment. This repo does not automatically load `.env`; use your shell, process manager, or local tooling to load it before starting the server.
+`npm run dev` automatically loads `.env` before starting the web and server processes. Process environment variables still take precedence over `.env` values when both are set.
 
 ## Environment Variables
 
@@ -84,6 +84,12 @@ Run web and server together:
 
 ```bash
 npm run dev
+```
+
+For this local machine, keep this entry in `.env` when using the right.codes provider:
+
+```txt
+TRUSTED_PROVIDER_ORIGINS=https://www.right.codes
 ```
 
 Run separately:

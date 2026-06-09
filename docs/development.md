@@ -30,12 +30,13 @@ On Windows PowerShell:
 Copy-Item .env.example .env
 ```
 
-This repo does not automatically load `.env`. Export variables in your shell or use a local process manager if needed.
+`npm run dev` automatically loads `.env` before starting the web and server processes. Shell/process environment variables take precedence over `.env` values when both are set.
 
 ## Scripts
 
 ```bash
 npm run dev        # run web and server together
+npm run dev:raw    # run web and server without loading .env
 npm run dev:web    # run Vite only
 npm run dev:server # run Fastify only
 npm run lint       # run ESLint
