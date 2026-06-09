@@ -1,14 +1,16 @@
 import { randomUUID } from "node:crypto";
 import type {
   GeneratedImage,
-  GenerateImageRequest,
   ImageModel,
   ImageModelCapability,
   ProviderRuntimeConfig
 } from "@image2/shared";
 import { AppError, sanitizeErrorDetail } from "../errors.js";
 import { assertSafeProviderUrl } from "../url-policy.js";
-import type { ImageProviderAdapter } from "./base.js";
+import type {
+  ImageProviderAdapter,
+  ImageProviderGenerateRequest
+} from "./base.js";
 
 const DEFAULT_TIMEOUT_MS = 10_000;
 const GENERATION_TIMEOUT_MS = 60_000;
@@ -28,7 +30,7 @@ const KNOWN_IMAGE_MODEL_PATTERNS = [
 type ModelRecord = Record<string, unknown>;
 type ImageRecord = Record<string, unknown>;
 
-function endpointFromBaseUrl(baseUrl: string, endpoint: string): Promise<URL> {
+export function endpointFromBaseUrl(baseUrl: string, endpoint: string): Promise<URL> {
   return assertSafeProviderUrl(baseUrl).then((url) => {
     const segments = url.pathname.split("/").filter(Boolean);
     const endpointSegments = endpoint.split("/").filter(Boolean);
@@ -257,7 +259,9 @@ function imageFromRecord(record: ImageRecord, index: number): GeneratedImage | u
   };
 }
 
-function generationPayload(request: GenerateImageRequest): Record<string, unknown> {
+function generationPayload(
+  request: ImageProviderGenerateRequest
+): Record<string, unknown> {
   const payload: Record<string, unknown> = {
     model: request.modelId,
     prompt: request.prompt,
@@ -282,6 +286,59 @@ function generationPayload(request: GenerateImageRequest): Record<string, unknow
   }
 
   return payload;
+}
+
+function dataUrlToBlob(dataUrl: string, mimeType: string): Blob {
+  const prefix = `data:${mimeType};base64,`;
+  const base64 = dataUrl.startsWith(prefix)
+    ? dataUrl.slice(prefix.length)
+    : dataUrl.split(",")[1];
+  const bytes = Buffer.from(base64, "base64");
+  return new Blob([bytes], { type: mimeType });
+}
+
+function imageEditFormData(request: ImageProviderGenerateRequest): FormData {
+  if (!request.inputImage) {
+    throw new AppError(
+      "BAD_REQUEST",
+      "An uploaded input image is required for image-to-image generation.",
+      400
+    );
+  }
+
+  const formData = new FormData();
+  const size = sizeFromRatio(request.ratio);
+
+  formData.set("model", request.modelId);
+  formData.set("prompt", request.prompt);
+  formData.set("n", String(request.count ?? 1));
+  formData.set(
+    "image",
+    dataUrlToBlob(request.inputImage.dataUrl, request.inputImage.mimeType),
+    `${request.inputImage.id}.${request.inputImage.mimeType.split("/")[1]}`
+  );
+
+  if (size) {
+    formData.set("size", size);
+  }
+
+  if (request.quality) {
+    formData.set("quality", request.quality);
+  }
+
+  if (request.negativePrompt) {
+    formData.set("negative_prompt", request.negativePrompt);
+  }
+
+  if (request.seed !== undefined) {
+    formData.set("seed", String(request.seed));
+  }
+
+  if (request.strength !== undefined) {
+    formData.set("strength", String(request.strength));
+  }
+
+  return formData;
 }
 
 function modelFromRecord(record: ModelRecord, providerId: string): ImageModel | undefined {
@@ -320,12 +377,28 @@ function summarizeProviderBody(body: string, apiKey: string): string {
   return sanitizeErrorDetail(normalized || "No response body.", apiKey);
 }
 
-function summarizeGenerationBody(body: string, apiKey: string): string {
+export function summarizeGenerationBody(body: string, apiKey: string): string {
   const normalized = body
     .replace(/\s+/g, " ")
     .trim()
     .slice(0, GENERATION_DETAIL_LIMIT);
   return sanitizeErrorDetail(normalized || "No response body.", apiKey);
+}
+
+export function imagesFromGenerationPayload(payload: unknown): GeneratedImage[] {
+  const images = asImageArray(payload)
+    .map((record, index) => imageFromRecord(record, index))
+    .filter((image): image is GeneratedImage => image !== undefined);
+
+  if (images.length === 0) {
+    throw new AppError(
+      "PROVIDER_GENERATION_FAILED",
+      "Provider did not return any images.",
+      502
+    );
+  }
+
+  return images;
 }
 
 export const openAiCompatibleAdapter: ImageProviderAdapter = {
@@ -410,26 +483,37 @@ export const openAiCompatibleAdapter: ImageProviderAdapter = {
 
   async generateImage(
     config: ProviderRuntimeConfig,
-    request: GenerateImageRequest
+    request: ImageProviderGenerateRequest
   ): Promise<GeneratedImage[]> {
-    const url = await endpointFromBaseUrl(config.baseUrl, "images/generations");
+    const isImageToImage = request.mode === "image-to-image";
+    const url = await endpointFromBaseUrl(
+      config.baseUrl,
+      isImageToImage ? "images/edits" : "images/generations"
+    );
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), GENERATION_TIMEOUT_MS);
+    const requestBody = isImageToImage
+      ? imageEditFormData(request)
+      : JSON.stringify(generationPayload(request));
+    const headers: Record<string, string> = {
+      accept: "application/json",
+      authorization: `Bearer ${config.apiKey}`
+    };
+
+    if (!isImageToImage) {
+      headers["content-type"] = "application/json";
+    }
 
     try {
       const response = await fetch(url, {
         method: "POST",
-        headers: {
-          accept: "application/json",
-          authorization: `Bearer ${config.apiKey}`,
-          "content-type": "application/json"
-        },
-        body: JSON.stringify(generationPayload(request)),
+        headers,
+        body: requestBody,
         redirect: "manual",
         signal: controller.signal
       });
 
-      const body = await response.text();
+      const responseBody = await response.text();
 
       if (response.status === 401 || response.status === 403) {
         throw new AppError(
@@ -445,13 +529,13 @@ export const openAiCompatibleAdapter: ImageProviderAdapter = {
           "PROVIDER_GENERATION_FAILED",
           "Provider returned an error while generating images.",
           502,
-          `HTTP ${response.status}: ${summarizeGenerationBody(body, config.apiKey)}`
+          `HTTP ${response.status}: ${summarizeGenerationBody(responseBody, config.apiKey)}`
         );
       }
 
       let payload: unknown;
       try {
-        payload = body ? JSON.parse(body) : {};
+        payload = responseBody ? JSON.parse(responseBody) : {};
       } catch {
         throw new AppError(
           "PROVIDER_GENERATION_FAILED",
@@ -460,19 +544,7 @@ export const openAiCompatibleAdapter: ImageProviderAdapter = {
         );
       }
 
-      const images = asImageArray(payload)
-        .map((record, index) => imageFromRecord(record, index))
-        .filter((image): image is GeneratedImage => image !== undefined);
-
-      if (images.length === 0) {
-        throw new AppError(
-          "PROVIDER_GENERATION_FAILED",
-          "Provider did not return any images.",
-          502
-        );
-      }
-
-      return images;
+      return imagesFromGenerationPayload(payload);
     } catch (error) {
       if (error instanceof AppError) {
         throw error;

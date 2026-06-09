@@ -50,6 +50,20 @@ export type GenerateImageRequest = {
   inputImageId?: string;
 };
 
+export type UploadImageRequest = {
+  fileName?: string;
+  mimeType: string;
+  dataUrl: string;
+};
+
+export type UploadedImageRef = {
+  id: string;
+  fileName?: string;
+  mimeType: "image/png" | "image/jpeg" | "image/webp";
+  sizeBytes: number;
+  uploadedAt: string;
+};
+
 export type GeneratedImage = {
   id: string;
   url?: string;
@@ -107,6 +121,10 @@ export type ModelListResponse = {
 export type GenerateImageResponse = {
   images: GeneratedImage[];
   generatedAt: string;
+};
+
+export type UploadImageResponse = {
+  image: UploadedImageRef;
 };
 
 export type ApiErrorCode =

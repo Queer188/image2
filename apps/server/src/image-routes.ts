@@ -1,10 +1,18 @@
 import type {
   GenerateImageRequest,
-  GenerateImageResponse
+  GenerateImageResponse,
+  UploadImageRequest,
+  UploadImageResponse
 } from "@image2/shared";
 import type { FastifyInstance } from "fastify";
 import { AppError } from "./errors.js";
+import {
+  getUploadedImage,
+  MAX_UPLOAD_BODY_BYTES,
+  saveUploadedImage
+} from "./image-upload-store.js";
 import { getProviderRuntimeConfig } from "./provider-store.js";
+import type { ImageProviderGenerateRequest } from "./providers/base.js";
 import { image2CompatibleAdapter } from "./providers/image2-compatible.js";
 
 const MAX_IMAGE_COUNT = 4;
@@ -17,10 +25,17 @@ function optionalInteger(value: unknown): number | undefined {
   return typeof value === "number" && Number.isInteger(value) ? value : undefined;
 }
 
-function resolveGenerateRequest(body: Partial<GenerateImageRequest>): GenerateImageRequest {
+function optionalFiniteNumber(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
+function resolveGenerateRequest(
+  body: Partial<GenerateImageRequest>
+): GenerateImageRequest {
   const providerId = optionalTrimmedString(body.providerId);
   const modelId = optionalTrimmedString(body.modelId);
   const prompt = optionalTrimmedString(body.prompt);
+  const mode = body.mode;
 
   if (!providerId) {
     throw new AppError("BAD_REQUEST", "Provider id is required.", 400);
@@ -30,12 +45,8 @@ function resolveGenerateRequest(body: Partial<GenerateImageRequest>): GenerateIm
     throw new AppError("BAD_REQUEST", "Model id is required.", 400);
   }
 
-  if (body.mode !== "text-to-image") {
-    throw new AppError(
-      "BAD_REQUEST",
-      "Only text-to-image generation is supported in this phase.",
-      400
-    );
+  if (mode !== "text-to-image" && mode !== "image-to-image") {
+    throw new AppError("BAD_REQUEST", "Generation mode is required.", 400);
   }
 
   if (!prompt) {
@@ -51,20 +62,56 @@ function resolveGenerateRequest(body: Partial<GenerateImageRequest>): GenerateIm
     );
   }
 
+  const strength = optionalFiniteNumber(body.strength);
+  if (
+    mode === "image-to-image" &&
+    (strength === undefined || strength < 0 || strength > 1)
+  ) {
+    throw new AppError(
+      "BAD_REQUEST",
+      "Strength must be a number between 0 and 1.",
+      400
+    );
+  }
+
+  const inputImageId = optionalTrimmedString(body.inputImageId);
+  if (mode === "image-to-image" && !inputImageId) {
+    throw new AppError(
+      "BAD_REQUEST",
+      "An uploaded input image is required for image-to-image generation.",
+      400
+    );
+  }
+
   return {
     providerId,
     modelId,
-    mode: "text-to-image",
+    mode,
     prompt,
     negativePrompt: optionalTrimmedString(body.negativePrompt),
     ratio: optionalTrimmedString(body.ratio),
     quality: optionalTrimmedString(body.quality),
     count,
-    seed: optionalInteger(body.seed)
+    seed: optionalInteger(body.seed),
+    strength,
+    inputImageId
   };
 }
 
 export async function registerImageRoutes(server: FastifyInstance) {
+  server.post(
+    "/api/images/upload",
+    {
+      bodyLimit: MAX_UPLOAD_BODY_BYTES
+    },
+    async (request, reply): Promise<UploadImageResponse> => {
+      const upload = saveUploadedImage(
+        (request.body ?? {}) as Partial<UploadImageRequest>
+      );
+      return reply.code(201).send(upload);
+    }
+  );
+
   server.post(
     "/api/images/generate",
     async (request): Promise<GenerateImageResponse> => {
@@ -72,9 +119,22 @@ export async function registerImageRoutes(server: FastifyInstance) {
         (request.body ?? {}) as Partial<GenerateImageRequest>
       );
       const config = getProviderRuntimeConfig(generationRequest.providerId);
+      const adapterRequest: ImageProviderGenerateRequest = {
+        ...generationRequest
+      };
+
+      if (generationRequest.mode === "image-to-image") {
+        const inputImage = getUploadedImage(generationRequest.inputImageId ?? "");
+        adapterRequest.inputImage = {
+          id: inputImage.id,
+          mimeType: inputImage.mimeType,
+          dataUrl: inputImage.dataUrl
+        };
+      }
+
       const images = await image2CompatibleAdapter.generateImage(
         config,
-        generationRequest
+        adapterRequest
       );
 
       return {
