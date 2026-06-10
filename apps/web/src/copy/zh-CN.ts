@@ -17,8 +17,19 @@ const apiErrorMessages: Record<ApiErrorCode, string> = {
   INTERNAL_ERROR: "本地服务发生异常，请稍后重试。"
 };
 
+function localizeDetail(detail: string): string {
+  return detail
+    .replace(/Provider returned HTTP (\d+)\./g, "服务返回 HTTP $1。")
+    .replace(/HTTP (\d+) Unauthorized/g, "HTTP $1 未授权")
+    .replace(/HTTP (\d+) Forbidden/g, "HTTP $1 无权限")
+    .replace(/No response body\./g, "响应内容为空。")
+    .replace(/Connection failed\./g, "连接失败。")
+    .replace(/Model discovery failed\./g, "模型发现失败。")
+    .replace(/Image generation failed\./g, "图片生成失败。");
+}
+
 function withDetail(message: string, detail?: string): string {
-  return detail ? `${message} 详情：${detail}` : message;
+  return detail ? `${message} 详情：${localizeDetail(detail)}` : message;
 }
 
 export const zhCN = {
@@ -147,8 +158,8 @@ export const zhCN = {
   messages: {
     providerSaved: "接口源已保存。API 密钥只保存在本地服务端进程中。",
     providerDeleted: "接口源已删除。",
-    testSucceeded: (message: string, statusCode?: number) =>
-      `连接测试成功。详情：${message} HTTP ${statusCode ?? "n/a"}。`,
+    testSucceeded: (_message: string, statusCode?: number) =>
+      `连接测试成功。详情：服务返回 HTTP ${statusCode ?? "未知"}。`,
     importedHistory: (count: number) =>
       count > 0
         ? `已导入 ${count} 条本地历史记录。`

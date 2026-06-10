@@ -124,7 +124,7 @@ describe("App", () => {
     render(<App />);
 
     expect(await screen.findByText(/API 密钥无效或没有权限/)).toBeInTheDocument();
-    expect(screen.getByText(/详情：HTTP 401 Unauthorized/)).toBeInTheDocument();
+    expect(screen.getByText(/详情：HTTP 401 未授权/)).toBeInTheDocument();
   });
 
   it("tests a saved provider connection", async () => {
